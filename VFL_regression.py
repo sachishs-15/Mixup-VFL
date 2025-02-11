@@ -8,9 +8,11 @@ from typing import List, Tuple, Dict, Optional, Callable
 import copy
 import tqdm
 import pdb
+from pdb import set_trace
 import argparse
 from sklearn.datasets import fetch_california_housing
 import random
+import pandas as pd
 
 
 class DataAlignment(Enum):
@@ -325,6 +327,18 @@ class CustomizableVFL:
             'history': history
         }
 
+def fetch_data():
+    df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    df = df.drop(df.columns[0], axis=1)  # Drop the first column
+
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+
+    return data, target, data.shape[1]
+
 def run_program():
 
     # Parse the Arguments
@@ -341,17 +355,16 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    data = fetch_california_housing()
-    X, y = data.data, data.target
-
+    X, y, feat_no = fetch_data()
+    set_trace()
     print("data loaded")
     
     # Configuration
     num_clients = 3
     feature_splits = [
-        [0, 1, 2],  # Client 1 features
-        [3, 4, 5],  # Client 2 features
-        [6, 7]      # Client 3 features
+        [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
+        [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
+        [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
     ]
     
     # Client model configurations
