@@ -331,12 +331,14 @@ def fetch_data():
     df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
     df = df.drop(df.columns[0], axis=1)  # Drop the first column
 
+    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+
     data = df[df.columns[:-1]]
     target = df[df.columns[-1]]
 
     data = data.to_numpy()
     target = target.to_numpy()
-
     return data, target, data.shape[1]
 
 def run_program():
@@ -356,7 +358,7 @@ def run_program():
     
     # Load data
     X, y, feat_no = fetch_data()
-    set_trace()
+    # set_trace()
     print("data loaded")
     
     # Configuration
