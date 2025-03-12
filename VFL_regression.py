@@ -25,6 +25,8 @@ class MixupStrategy(Enum):
     MAX_MIXUP = "max_mixup"
     MEAN_MIXUP = "mean_mixup"
     IMPORTANCE_MIXUP = "importance_mixup"
+    MODEL_BASED_MIXUP = "model_based_mixup"
+    MUTUAL_INFO_MIXUP = "mutual_info_mixup"
 
 class ClientModel(nn.Module):
     def __init__(self, input_size: int, hidden_layers: List[int], embedding_size: int):
@@ -125,6 +127,10 @@ class CustomizableVFL:
             self.mixup_fn = self.mean_mixup
         elif self.mixup_strategy == MixupStrategy.IMPORTANCE_MIXUP:
             self.mixup_fn = self.importance_mixup
+        elif self.mixup_strategy == MixupStrategy.MODEL_BASED_MIXUP:
+            self.mixup_fn = self.model_based_mixup
+        elif self.mixup_strategy == MixupStrategy.MUTUAL_INFO_MIXUP:
+            self.mixup_fn = self.mutual_info_mixup
         
         self.loss_fn = nn.MSELoss()
 
@@ -175,6 +181,82 @@ class CustomizableVFL:
 
         # set_trace()
         # Weighted average of labels
+        weighted_labels = torch.zeros_like(client_batch_labels[0])
+        for client_id, importance in client_importance.items():
+            weighted_labels += importance * client_batch_labels[client_id]
+        
+        return weighted_labels
+    
+    @staticmethod
+    def model_based_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor],
+        model_type: str = 'linear'
+    ) -> torch.Tensor:
+        
+        from sklearn.linear_model import LinearRegression
+        from sklearn.ensemble import RandomForestRegressor
+        
+        client_importance = {}
+        
+        # Calculate importance for each client using their own labels
+        for client_id, (embedding, labels) in enumerate(zip(client_embeddings, client_batch_labels)):
+            # Convert to numpy arrays
+            embeddings_np = embedding.detach().cpu().numpy()
+            labels_np = labels.cpu().numpy().squeeze()
+            
+            if model_type == 'linear':
+                model = LinearRegression()
+                model.fit(embeddings_np, labels_np)
+                importances = np.abs(model.coef_)  # Use absolute coefficients
+            elif model_type == 'random_forest':
+                model = RandomForestRegressor()
+                model.fit(embeddings_np, labels_np)
+                importances = model.feature_importances_
+            
+            # Aggregate feature importances for this client
+            client_importance[client_id] = np.mean(importances)
+        
+        # Normalize importance scores to sum to 1
+        total_importance = sum(client_importance.values())
+        for client_id in client_importance:
+            client_importance[client_id] /= total_importance
+        
+        # Create weighted average of labels using calculated importances
+        weighted_labels = torch.zeros_like(client_batch_labels[0])
+        for client_id, importance in client_importance.items():
+            weighted_labels += importance * client_batch_labels[client_id]
+        
+        return weighted_labels
+    
+    @staticmethod
+    def mutual_info_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor]
+    ) -> torch.Tensor:
+        
+        from sklearn.feature_selection import mutual_info_regression
+        
+        client_importance = {}
+        
+        # Calculate importance for each client using mutual information
+        for client_id, (embedding, labels) in enumerate(zip(client_embeddings, client_batch_labels)):
+            # Convert to numpy arrays
+            embeddings_np = embedding.detach().cpu().numpy()
+            labels_np = labels.cpu().numpy().squeeze()
+            
+            # Calculate mutual information between embeddings and labels
+            mi_scores = mutual_info_regression(embeddings_np, labels_np)
+            
+            # Aggregate mutual information scores for this client
+            client_importance[client_id] = np.mean(mi_scores)
+        
+        # Normalize importance scores to sum to 1
+        total_importance = sum(client_importance.values())
+        for client_id in client_importance:
+            client_importance[client_id] /= total_importance
+        
+        # Create weighted average of labels using calculated importances
         weighted_labels = torch.zeros_like(client_batch_labels[0])
         for client_id, importance in client_importance.items():
             weighted_labels += importance * client_batch_labels[client_id]
@@ -386,7 +468,7 @@ def fetch_data():
 
     data = data.to_numpy()
     target = target.to_numpy()
-    set_trace()
+    # set_trace()
     return data, target, data.shape[1]
 
 def run_program():
@@ -395,7 +477,7 @@ def run_program():
     parser = argparse.ArgumentParser(description='Customize how you want to run VFL')
     parser.add_argument('--unaligned', action='store_true', help='Whether to run VFL with aligned data')
     parser.add_argument('--unaligned_ratio', type=float, default=0.8, help='Ratio of unaligned data')
-    parser.add_argument('--mixup_strategy', type=str, default='no_mixup', help='Mixup strategy to use', choices=['no_mixup', 'max_mixup', 'mean_mixup', 'importance_mixup'])
+    parser.add_argument('--mixup_strategy', type=str, default='no_mixup', help='Mixup strategy to use', choices=['no_mixup', 'max_mixup', 'mean_mixup', 'importance_mixup', 'model_based_mixup', 'mutual_info_mixup'])
     
     args = parser.parse_args()
 
