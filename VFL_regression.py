@@ -8,9 +8,12 @@ from typing import List, Tuple, Dict, Optional, Callable
 import copy
 import tqdm
 import pdb
+from pdb import set_trace
 import argparse
 from sklearn.datasets import fetch_california_housing
 import random
+import pandas as pd
+import math
 
 
 class DataAlignment(Enum):
@@ -21,6 +24,9 @@ class MixupStrategy(Enum):
     NO_MIXUP = "no_mixup"
     MAX_MIXUP = "max_mixup"
     MEAN_MIXUP = "mean_mixup"
+    IMPORTANCE_MIXUP = "importance_mixup"
+    MODEL_BASED_MIXUP = "model_based_mixup"
+    MUTUAL_INFO_MIXUP = "mutual_info_mixup"
 
 class ClientModel(nn.Module):
     def __init__(self, input_size: int, hidden_layers: List[int], embedding_size: int):
@@ -106,6 +112,7 @@ class CustomizableVFL:
             embedding_size=embedding_size,
             hidden_layers=top_model_config['hidden_layers']
         ).to(device)
+
         self.top_optimizer = optim.Adam(
             self.top_model.parameters(),
             lr=top_model_config.get('learning_rate', 0.0001)
@@ -118,38 +125,160 @@ class CustomizableVFL:
             self.mixup_fn = self.max_mixup
         elif self.mixup_strategy == MixupStrategy.MEAN_MIXUP:
             self.mixup_fn = self.mean_mixup
+        elif self.mixup_strategy == MixupStrategy.IMPORTANCE_MIXUP:
+            self.mixup_fn = self.importance_mixup
+        elif self.mixup_strategy == MixupStrategy.MODEL_BASED_MIXUP:
+            self.mixup_fn = self.model_based_mixup
+        elif self.mixup_strategy == MixupStrategy.MUTUAL_INFO_MIXUP:
+            self.mixup_fn = self.mutual_info_mixup
         
         self.loss_fn = nn.MSELoss()
 
     @staticmethod
     def no_mixup(
         client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor] = None
     ) -> torch.Tensor:
         return client_batch_labels[0]
     
     @staticmethod
     def max_mixup(
         client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor] = None
     ) -> torch.Tensor:
         return torch.max(torch.stack(client_batch_labels), dim=0).values
     
     @staticmethod
     def mean_mixup(
         client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor] = None
     ) -> torch.Tensor:
         return torch.mean(torch.stack(client_batch_labels), dim=0)
+
+    @staticmethod
+    def importance_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor]
+    ) -> torch.Tensor:
+        
+        # set_trace()
+        embeddings = [embedding.detach().cpu().numpy() for embedding in client_embeddings]
+        client_importance = {}
     
+        for client_id, embedding in enumerate(embeddings):
+            correlations = []
+            for i in range(embedding.shape[1]):  # Iterate over embedding dimensions
+                corr = np.corrcoef(embedding[:, i], client_batch_labels[client_id].cpu().numpy().squeeze())[0, 1]
+                correlations.append(abs(corr))  # Use absolute correlation
+            
+            # Aggregate correlations for this client
+            client_importance[client_id] = np.mean(correlations)
+    
+        # Normalize importance scores to sum to 1
+        total_importance = sum(client_importance.values())
+        for client_id in client_importance:
+            client_importance[client_id] /= total_importance
+
+        # set_trace()
+        # Weighted average of labels
+        weighted_labels = torch.zeros_like(client_batch_labels[0])
+        for client_id, importance in client_importance.items():
+            weighted_labels += importance * client_batch_labels[client_id]
+        
+        return weighted_labels
+    
+    @staticmethod
+    def model_based_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor],
+        model_type: str = 'linear'
+    ) -> torch.Tensor:
+        
+        from sklearn.linear_model import LinearRegression
+        from sklearn.ensemble import RandomForestRegressor
+        
+        client_importance = {}
+        
+        # Calculate importance for each client using their own labels
+        for client_id, (embedding, labels) in enumerate(zip(client_embeddings, client_batch_labels)):
+            # Convert to numpy arrays
+            embeddings_np = embedding.detach().cpu().numpy()
+            labels_np = labels.cpu().numpy().squeeze()
+            
+            if model_type == 'linear':
+                model = LinearRegression()
+                model.fit(embeddings_np, labels_np)
+                importances = np.abs(model.coef_)  # Use absolute coefficients
+            elif model_type == 'random_forest':
+                model = RandomForestRegressor()
+                model.fit(embeddings_np, labels_np)
+                importances = model.feature_importances_
+            
+            # Aggregate feature importances for this client
+            client_importance[client_id] = np.mean(importances)
+        
+        # Normalize importance scores to sum to 1
+        total_importance = sum(client_importance.values())
+        for client_id in client_importance:
+            client_importance[client_id] /= total_importance
+        
+        # Create weighted average of labels using calculated importances
+        weighted_labels = torch.zeros_like(client_batch_labels[0])
+        for client_id, importance in client_importance.items():
+            weighted_labels += importance * client_batch_labels[client_id]
+        
+        return weighted_labels
+    
+    @staticmethod
+    def mutual_info_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor]
+    ) -> torch.Tensor:
+        
+        from sklearn.feature_selection import mutual_info_regression
+        
+        client_importance = {}
+        
+        # Calculate importance for each client using mutual information
+        for client_id, (embedding, labels) in enumerate(zip(client_embeddings, client_batch_labels)):
+            # Convert to numpy arrays
+            embeddings_np = embedding.detach().cpu().numpy()
+            labels_np = labels.cpu().numpy().squeeze()
+            
+            # Calculate mutual information between embeddings and labels
+            mi_scores = mutual_info_regression(embeddings_np, labels_np)
+            
+            # Aggregate mutual information scores for this client
+            client_importance[client_id] = np.mean(mi_scores)
+        
+        # Normalize importance scores to sum to 1
+        total_importance = sum(client_importance.values())
+        for client_id in client_importance:
+            client_importance[client_id] /= total_importance
+        
+        # Create weighted average of labels using calculated importances
+        weighted_labels = torch.zeros_like(client_batch_labels[0])
+        for client_id, importance in client_importance.items():
+            weighted_labels += importance * client_batch_labels[client_id]
+        
+        return weighted_labels
+
     def prepare_datasets(
         self,
         X: np.ndarray,
         y: np.ndarray,
+        subset_size: Optional[int] = None,
         train_size: float = 0.7,
         unaligned_ratio: float = 0.8
     ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
         """Same as before - preparation of aligned or unaligned datasets"""
         client_data = []
         client_labels = []
-        
+
+        if subset_size:
+            X = X[:subset_size]
+            y = y[:subset_size]
+
         if self.data_alignment == DataAlignment.ALIGNED:
             X_train_full, X_test_full, y_train, y_test = train_test_split(
                 X, y, train_size=train_size, shuffle=True
@@ -241,7 +370,8 @@ class CustomizableVFL:
         final_prediction = self.top_model(client_embeddings)
         
         # Calculate loss (using labels from first client if unaligned)
-        loss = self.loss_fn(final_prediction, self.mixup_fn(client_batch_labels))
+        # set_trace()
+        loss = self.loss_fn(final_prediction, self.mixup_fn(client_batch_labels, client_embeddings))
         
         # Backward pass
         loss.backward()
@@ -302,10 +432,11 @@ class CustomizableVFL:
                     bar.set_postfix(mse=float(loss))
             
             print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
-            # pdb.set_trace()
+            # set_trace()
             min_test_length = min(len(test_data) for _, test_data in client_data)
             test_data = [test_data[:min_test_length] for _, test_data in client_data]
             mse = self.evaluate(test_data, client_labels[0][1][:min_test_length])
+            print(f"Epoch {epoch}, Test RMSE: {math.sqrt(mse)}")
             history.append(mse)
             
             if mse < best_mse:
@@ -325,33 +456,48 @@ class CustomizableVFL:
             'history': history
         }
 
+def fetch_data():
+    df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    df = df.drop(df.columns[0], axis=1)  # Drop the first column
+
+    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+    # set_trace()
+    return data, target, data.shape[1]
+
 def run_program():
 
     # Parse the Arguments
     parser = argparse.ArgumentParser(description='Customize how you want to run VFL')
     parser.add_argument('--unaligned', action='store_true', help='Whether to run VFL with aligned data')
     parser.add_argument('--unaligned_ratio', type=float, default=0.8, help='Ratio of unaligned data')
-    parser.add_argument('--mixup_strategy', type=str, default='no_mixup', help='Mixup strategy to use', choices=['no_mixup', 'max_mixup', 'mean_mixup'])
+    parser.add_argument('--mixup_strategy', type=str, default='no_mixup', help='Mixup strategy to use', choices=['no_mixup', 'max_mixup', 'mean_mixup', 'importance_mixup', 'model_based_mixup', 'mutual_info_mixup'])
     
     args = parser.parse_args()
 
     algn_type = DataAlignment.ALIGNED if not args.unaligned else DataAlignment.UNALIGNED
     mixup_strategy = MixupStrategy(args.mixup_strategy)
+    unaligned_ratio = args.unaligned_ratio
     print(f"Mixup Strategy: {mixup_strategy}")
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    data = fetch_california_housing()
-    X, y = data.data, data.target
-
+    X, y, feat_no = fetch_data()
+    # set_trace()
     print("data loaded")
     
     # Configuration
     num_clients = 3
     feature_splits = [
-        [0, 1, 2],  # Client 1 features
-        [3, 4, 5],  # Client 2 features
-        [6, 7]      # Client 3 features
+        [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
+        [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
+        [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
     ]
     
     # Client model configurations
@@ -386,7 +532,7 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y)
+    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250000, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     
@@ -395,7 +541,7 @@ def run_program():
         client_data=client_data,
         client_labels=client_labels,
         n_epochs=100,
-        batch_size=10
+        batch_size=1024
     )
     
     print(f"Final Best MSE: {results['best_mse']}")
