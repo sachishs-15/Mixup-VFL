@@ -14,7 +14,11 @@ from sklearn.datasets import fetch_california_housing
 import random
 import pandas as pd
 import math
-
+from typing import List, Optional
+from torchvision import models
+import cv2
+import xmltodict
+import os
 
 class DataAlignment(Enum):
     ALIGNED = "aligned"
@@ -47,6 +51,65 @@ class ClientModel(nn.Module):
     
     def forward(self, x):
         return self.layers(x)
+
+class ResNet50ClientModel(nn.Module):
+
+    def __init__(self, input_size: int, embedding_size: int, image_width: Optional[int] = None, pretrained: bool = True):
+        super().__init__()
+        self.input_size = input_size
+        self.embedding_size = embedding_size
+        
+        if image_width is None:
+            self.image_width = int(math.sqrt(input_size))
+        else:
+            self.image_width = image_width
+            
+        # Calculate height based on input size and width
+        self.image_height = math.ceil(input_size / self.image_width)
+        
+        # Load a pretrained ResNet50 model
+        self.resnet = models.resnet50(pretrained=pretrained)
+        
+        # Modify the first layer to accept single-channel input instead of 3-channel (RGB)
+        if pretrained:
+            first_conv_weights = self.resnet.conv1.weight.data.clone()
+            # Average the weights across the RGB channels to create weights for a single channel
+            self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            with torch.no_grad():
+                self.resnet.conv1.weight.data = torch.mean(first_conv_weights, dim=1, keepdim=True)
+        else:
+            self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        num_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Identity()  # Remove the classification layer
+        
+        self.fc_embedding = nn.Linear(num_features, embedding_size)
+    
+    def forward(self, x):
+        batch_size = x.shape[0]
+        
+        # Pad the input to fit the image dimensions if needed
+        padded_size = self.image_width * self.image_height
+        if self.input_size < padded_size:
+            padding = torch.zeros(batch_size, padded_size - self.input_size, device=x.device)
+            x = torch.cat([x, padding], dim=1)
+        
+        x = x.view(batch_size, 1, self.image_height, self.image_width)
+        
+        # Ensure the input is large enough for ResNet (which typically expects at least 224x224)
+        # If the image is too small, we'll upsample it
+        if self.image_height < 224 or self.image_width < 224:
+            x = nn.functional.interpolate(
+                x, 
+                size=(max(224, self.image_height), max(224, self.image_width)),
+                mode='bilinear',
+                align_corners=False
+            )
+        
+        x = self.resnet(x)
+        embedding = self.fc_embedding(x)
+        
+        return embedding
 
 class ServerModel(nn.Module):
     def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int]):
@@ -96,11 +159,19 @@ class CustomizableVFL:
         
         for i in range(num_clients):
             config = client_models_config[i]
-            model = ClientModel(
-                input_size=len(feature_splits[i]),
-                hidden_layers=config['hidden_layers'],
-                embedding_size=embedding_size
-            ).to(device)
+            if config.get('model_type') == 'resnet50':
+                model = ResNet50ClientModel(
+                    input_size=len(feature_splits[i]),
+                    embedding_size=embedding_size,
+                    image_width=config.get('image_width', None),
+                    pretrained=config.get('pretrained', True)
+                ).to(device)
+            else:
+                model = ClientModel(
+                    input_size=len(feature_splits[i]),
+                    hidden_layers=config['hidden_layers'],
+                    embedding_size=embedding_size
+                ).to(device)
             self.client_models.append(model)
             self.client_optimizers.append(
                 optim.Adam(model.parameters(), lr=config.get('learning_rate', 0.0001))
@@ -456,8 +527,31 @@ class CustomizableVFL:
             'history': history
         }
 
+def split_features(num_features: int, num_clients: int, distribution: Optional[List[int]] = None) -> List[List[int]]:
+    if distribution is None:
+        # If no distribution is provided, divide features evenly
+        num_clients = 3  # Default number of clients
+        base_size = num_features // num_clients
+        remainder = num_features % num_clients
+        
+        distribution = [base_size] * num_clients
+        for i in range(remainder):
+            distribution[i] += 1
+    
+    if sum(distribution) != num_features:
+        raise ValueError("Distribution does not match the total number of features.")
+    
+    feature_splits = []
+    start = 0
+    for size in distribution:
+        feature_splits.append(list(range(start, start + size)))
+        start += size
+    
+    return feature_splits
+
 def fetch_data():
     df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    set_trace()
     df = df.drop(df.columns[0], axis=1)  # Drop the first column
 
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
@@ -470,6 +564,59 @@ def fetch_data():
     target = target.to_numpy()
     # set_trace()
     return data, target, data.shape[1]
+
+def modify_bbox_coordinates(bndbox, original_image_size, new_image_size):
+
+    bndbox['xmin'] = int(int(bndbox['xmin']) * new_image_size[1] / original_image_size[1])
+    bndbox['xmax'] = int(int(bndbox['xmax']) * new_image_size[1] / original_image_size[1])
+    bndbox['ymin'] = int(int(bndbox['ymin']) * new_image_size[0] / original_image_size[0])
+    bndbox['ymax'] = int(int(bndbox['ymax']) * new_image_size[0] / original_image_size[0])
+
+    return bndbox
+
+def fetch_ice_pets():
+    
+    images_path = 'Datasets/ice_pets/images/'
+    labels_path = 'Datasets/ice_pets/annotations/xmls/'
+
+    images = []
+    labels = []
+    image_size = (400, 600)
+
+
+    #sorted list of images
+    for filename in sorted(os.listdir(labels_path)):
+        # print(filename)
+
+        image_name = filename.split('.')[0] + '.jpg'
+        # open image and save it to a list
+        image_np = cv2.imread(images_path + image_name)
+        # if corrupt image
+        if image_np is None:
+            continue
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+        original_image_size = image_np.shape
+        image_np = cv2.resize(image_np, image_size)
+        image_np = image_np.flatten()
+        # add to list
+        images.append(image_np)
+
+        with open(labels_path + filename) as xml_file:
+            data_dict = xmltodict.parse(xml_file.read())
+
+            if isinstance(data_dict['annotation']['object'], list):
+                bndbox = data_dict['annotation']['object'][0]['bndbox']
+            else:
+                bndbox = data_dict['annotation']['object']['bndbox']
+
+            bndbox = modify_bbox_coordinates(bndbox, original_image_size, image_size)
+            label = [int(bndbox['xmin']), int(bndbox['ymin']), int(bndbox['xmax']), int(bndbox['ymax'])]
+            labels.append(label)
+
+    images = np.vstack(images)
+    labels = np.array(labels)
+    
+    return images, labels, image_size
 
 def run_program():
 
@@ -488,31 +635,34 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    X, y, feat_no = fetch_data()
+    X, y, feat_no = fetch_ice_pets()
     # set_trace()
     print("data loaded")
     
     # Configuration
     num_clients = 3
-    feature_splits = [
-        [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
-        [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
-        [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
-    ]
+    feat_no = X.shape[1]  
+    feature_splits = split_features(feat_no, num_clients)
+    # feature_splits = [
+    #     [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
+    #     [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
+    #     [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
+    # ]
     
     # Client model configurations
     client_models_config = [
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001},
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001},
-        {'hidden_layers': [8, 4], 'learning_rate': 0.001}
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600},
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600},
+        {'hidden_layers': [8, 4], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600}
     ]
 
     print("client config loaded")
 
     # Top model configuration
     top_model_config = {
+        
         'hidden_layers': [24, 12],
-        'learning_rate': 0.001
+        'learning_rate': 0.001,
     }
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -532,7 +682,7 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250000, train_size=0.8, unaligned_ratio=unaligned_ratio)
+    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     
@@ -541,7 +691,7 @@ def run_program():
         client_data=client_data,
         client_labels=client_labels,
         n_epochs=100,
-        batch_size=1024
+        batch_size=4
     )
     
     print(f"Final Best MSE: {results['best_mse']}")
