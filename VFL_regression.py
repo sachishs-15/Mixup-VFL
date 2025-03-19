@@ -112,7 +112,7 @@ class ResNet50ClientModel(nn.Module):
         return embedding
 
 class ServerModel(nn.Module):
-    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int]):
+    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int], output_size: int = 1):
         super().__init__()
         
         total_input_size = num_clients * embedding_size
@@ -126,7 +126,7 @@ class ServerModel(nn.Module):
             ])
             prev_size = hidden_size
         
-        layers.append(nn.Linear(prev_size, 1))
+        layers.append(nn.Linear(prev_size, output_size))
         self.layers = nn.Sequential(*layers)
     
     def forward(self, embeddings: List[torch.Tensor]):
@@ -181,7 +181,8 @@ class CustomizableVFL:
         self.top_model = ServerModel(
             num_clients=num_clients,
             embedding_size=embedding_size,
-            hidden_layers=top_model_config['hidden_layers']
+            hidden_layers=top_model_config['hidden_layers'],
+            output_size=top_model_config.get('output_size', 1)
         ).to(device)
 
         self.top_optimizer = optim.Adam(
@@ -340,7 +341,8 @@ class CustomizableVFL:
         y: np.ndarray,
         subset_size: Optional[int] = None,
         train_size: float = 0.7,
-        unaligned_ratio: float = 0.8
+        unaligned_ratio: float = 0.8,
+        n_labels: int = 1
     ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
         """Same as before - preparation of aligned or unaligned datasets"""
         client_data = []
@@ -358,8 +360,8 @@ class CustomizableVFL:
             for feature_split in self.feature_splits:
                 X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
                 X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
-                y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
-                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
+                y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, n_labels).to(self.device)
+                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, n_labels).to(self.device)
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_tensor, y_test_tensor))
@@ -385,8 +387,8 @@ class CustomizableVFL:
                 X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
                 X_train = X_train[list(client_indices)]
                 X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
-                y_train_tensor = torch.tensor(y_train[list(client_indices)], dtype=torch.float32).reshape(-1, 1).to(self.device)
-                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
+                y_train_tensor = torch.tensor(y_train[list(client_indices)], dtype=torch.float32).reshape(-1, n_labels).to(self.device)
+                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, n_labels).to(self.device)
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_tensor, y_test_tensor))
@@ -415,8 +417,8 @@ class CustomizableVFL:
                 
                 X_train = torch.tensor(X_train, dtype=torch.float32).to(self.device)
                 X_test = torch.tensor(X_test, dtype=torch.float32).to(self.device)
-                y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
-                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
+                y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, n_labels).to(self.device)
+                y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, n_labels).to(self.device)
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_tensor, y_test_tensor))
@@ -636,7 +638,7 @@ def run_program():
     
     # Load data
     X, y, feat_no = fetch_ice_pets()
-    # set_trace()
+    set_trace()
     print("data loaded")
     
     # Configuration
@@ -663,6 +665,7 @@ def run_program():
         
         'hidden_layers': [24, 12],
         'learning_rate': 0.001,
+        'output_size': y.shape[1] # change this to 4 for ice pets
     }
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -674,7 +677,7 @@ def run_program():
         data_alignment=algn_type,
         client_models_config=client_models_config,
         top_model_config=top_model_config,
-        embedding_size=8,
+        embedding_size=64,
         mixup_strategy=mixup_strategy,
         device=device
     )
@@ -682,8 +685,8 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio)
-
+    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio, n_labels=y.shape[1])
+    set_trace()
     print("data prepared")
     
     # Train the system
