@@ -112,10 +112,16 @@ class ResNet50ClientModel(nn.Module):
         return embedding
 
 class ServerModel(nn.Module):
-    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int]):
+    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int], aggregate_fn: Callable = None):
         super().__init__()
         
-        total_input_size = num_clients * embedding_size
+        self.aggregate_fn = aggregate_fn
+
+        if self.aggregate_fn is not  None:
+            total_input_size = embedding_size
+        else:
+            total_input_size = num_clients * embedding_size
+
         layers = []
         prev_size = total_input_size
         
@@ -131,7 +137,12 @@ class ServerModel(nn.Module):
     
     def forward(self, embeddings: List[torch.Tensor]):
         # Concatenate embeddings from all clients
-        combined = torch.cat(embeddings, dim=1)
+        if self.aggregate_fn is not None:
+            combined = self.aggregate_fn(torch.stack(embeddings), dim=0)
+
+        else:
+            combined = torch.cat(embeddings, dim=1)
+
         return self.layers(combined)
 
 class CustomizableVFL:
@@ -181,7 +192,8 @@ class CustomizableVFL:
         self.top_model = ServerModel(
             num_clients=num_clients,
             embedding_size=embedding_size,
-            hidden_layers=top_model_config['hidden_layers']
+            hidden_layers=top_model_config['hidden_layers'],
+            aggregate_fn=top_model_config.get('aggregate_fn', None)
         ).to(device)
 
         self.top_optimizer = optim.Adam(
@@ -635,7 +647,9 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    X, y, feat_no = fetch_ice_pets()
+    # X, y, feat_no = fetch_ice_pets()
+    X, y = fetch_california_housing(return_X_y=True)
+    feat_no = 8
     # set_trace()
     print("data loaded")
     
@@ -651,9 +665,9 @@ def run_program():
     
     # Client model configurations
     client_models_config = [
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600},
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600},
-        {'hidden_layers': [8, 4], 'learning_rate': 0.001, 'model_type': 'resnet50', 'image_width': 600}
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
+        {'hidden_layers': [8, 4], 'learning_rate': 0.001, 'image_width': 600}
     ]
 
     print("client config loaded")
@@ -663,6 +677,7 @@ def run_program():
         
         'hidden_layers': [24, 12],
         'learning_rate': 0.001,
+        # 'aggregate_fn': torch.mean
     }
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -682,7 +697,7 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio)
+    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=20000, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     
