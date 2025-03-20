@@ -10,7 +10,7 @@ import tqdm
 import pdb
 from pdb import set_trace
 import argparse
-from sklearn.datasets import fetch_california_housing
+from sklearn.datasets import fetch_california_housing, load_wine
 import random
 import pandas as pd
 import math
@@ -353,8 +353,9 @@ class CustomizableVFL:
         subset_size: Optional[int] = None,
         train_size: float = 0.7,
         unaligned_ratio: float = 0.8
-    ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
-        """Same as before - preparation of aligned or unaligned datasets"""
+        ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
+
+        """Prepare datasets with normalization for client models"""
         client_data = []
         client_labels = []
 
@@ -368,8 +369,24 @@ class CustomizableVFL:
             )
             
             for feature_split in self.feature_splits:
-                X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
-                X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
+                # Extract features for this client
+                X_train_client = X_train_full[:, feature_split]
+                X_test_client = X_test_full[:, feature_split]
+                
+                # Normalize the data for this client
+                # Calculate mean and std on training data
+                mean = np.mean(X_train_client, axis=0)
+                std = np.std(X_train_client, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                # Apply normalization
+                X_train_normalized = (X_train_client - mean) / std
+                X_test_normalized = (X_test_client - mean) / std
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
                 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
@@ -377,56 +394,73 @@ class CustomizableVFL:
                 client_labels.append((y_train_tensor, y_test_tensor))
 
         elif self.data_alignment == DataAlignment.UNALIGNED:
-
             X_train_full, X_test_full, y_train, y_test = train_test_split(
                 X, y, train_size=train_size, shuffle=True
             )
 
-            # pdb.set_trace()
             all_indices_random = np.random.permutation(len(X_train_full))
             unaligned_indices = all_indices_random[:int(len(X_train_full) * unaligned_ratio)]
             aligned_indices = np.setdiff1d(np.arange(len(X_train_full)), unaligned_indices)
             
             for feature_split in self.feature_splits:
-
                 train_unaligned_indices = unaligned_indices.copy()
-                np.random.shuffle(unaligned_indices)
+                np.random.shuffle(aligned_indices)
                 train_aligned_indices = aligned_indices
-                client_indices = np.concatenate([train_aligned_indices, train_unaligned_indices]) # concatenate aligned and unaligned indices
+                client_indices = np.concatenate([train_aligned_indices, train_unaligned_indices])
 
-                X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
-                X_train = X_train[list(client_indices)]
-                X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
-                y_train_tensor = torch.tensor(y_train[list(client_indices)], dtype=torch.float32).reshape(-1, 1).to(self.device)
+                # Extract features for this client
+                X_train_client = X_train_full[:, feature_split]
+                X_test_client = X_test_full[:, feature_split]
+                
+                # Normalize the data
+                mean = np.mean(X_train_client, axis=0)
+                std = np.std(X_train_client, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                X_train_normalized = (X_train_client - mean) / std
+                X_test_normalized = (X_test_client - mean) / std
+                
+                # Apply client indices after normalization
+                X_train_normalized = X_train_normalized[list(client_indices)]
+                y_train_client = y_train[list(client_indices)]
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
+                y_train_tensor = torch.tensor(y_train_client, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_tensor, y_test_tensor))
 
         else:
-
             all_indices_random = np.random.permutation(len(X))
             unaligned_indices = all_indices_random[:int(len(X) * unaligned_ratio)]
             aligned_indices = np.setdiff1d(np.arange(len(X)), unaligned_indices)
 
             for feature_split in self.feature_splits:
                 X_client = X[:, feature_split]
-                # client_unaligned_indices = np.random.permutation(len(X_client))
-                # client_unaligned_indices = np.random.shuffle(client_unaligned_indices)
-                # client_aligned_indices = aligned_indices
-                # indices = np.concatenate([client_aligned_indices, client_unaligned_indices])
-                # client_size = int(len(indices) * unaligned_ratio)
-                # client_indices = indices[:client_size]
                 
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X[:, feature_split],
+                    X_client,
                     y,
                     train_size=train_size,
                     shuffle=False
                 )
                 
-                X_train = torch.tensor(X_train, dtype=torch.float32).to(self.device)
-                X_test = torch.tensor(X_test, dtype=torch.float32).to(self.device)
+                # Normalize the data
+                mean = np.mean(X_train, axis=0)
+                std = np.std(X_train, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                X_train_normalized = (X_train - mean) / std
+                X_test_normalized = (X_test - mean) / std
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
                 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
@@ -514,7 +548,7 @@ class CustomizableVFL:
                     total_loss += loss
                     bar.set_postfix(mse=float(loss))
             
-            print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
+            # print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
             # set_trace()
             min_test_length = min(len(test_data) for _, test_data in client_data)
             test_data = [test_data[:min_test_length] for _, test_data in client_data]
@@ -563,7 +597,7 @@ def split_features(num_features: int, num_clients: int, distribution: Optional[L
 
 def fetch_data():
     df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
-    set_trace()
+    # set_trace()
     df = df.drop(df.columns[0], axis=1)  # Drop the first column
 
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
@@ -585,6 +619,32 @@ def modify_bbox_coordinates(bndbox, original_image_size, new_image_size):
     bndbox['ymax'] = int(int(bndbox['ymax']) * new_image_size[0] / original_image_size[0])
 
     return bndbox
+
+
+def fetch_biketrip():
+    df = pd.read_csv('Datasets/biketrip/For_modeling.csv')
+    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    print(df.head())
+    target = df[df.columns[1]]
+    df = df.drop(df.columns[:2],axis=1)
+    data = df
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
+
+def fetch_superconductivity():
+    df = pd.read_csv('Datasets/superconductivity/train.csv')
+    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
+
 
 def fetch_ice_pets():
     
@@ -647,14 +707,16 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    # X, y, feat_no = fetch_ice_pets()
+    # X, y, feat_no = fetch_data()
+    # X, y, feat_no = fetch_biketrip()
+    # X, y, feat_no = fetch_superconductivity()
     X, y = fetch_california_housing(return_X_y=True)
-    feat_no = 8
+    # feat_no = 8
     # set_trace()
     print("data loaded")
     
     # Configuration
-    num_clients = 3
+    num_clients = 2
     feat_no = X.shape[1]  
     feature_splits = split_features(feat_no, num_clients)
     # feature_splits = [
@@ -697,7 +759,7 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=20000, train_size=0.8, unaligned_ratio=unaligned_ratio)
+    client_data, client_labels = vfl.prepare_datasets(X, y, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     
@@ -706,7 +768,7 @@ def run_program():
         client_data=client_data,
         client_labels=client_labels,
         n_epochs=100,
-        batch_size=4
+        batch_size=64
     )
     
     print(f"Final Best MSE: {results['best_mse']}")
