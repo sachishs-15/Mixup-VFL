@@ -10,11 +10,15 @@ import tqdm
 import pdb
 from pdb import set_trace
 import argparse
-from sklearn.datasets import fetch_california_housing
+from sklearn.datasets import fetch_california_housing, load_wine
 import random
 import pandas as pd
 import math
-
+from typing import List, Optional
+from torchvision import models
+import cv2
+import xmltodict
+import os
 
 class DataAlignment(Enum):
     ALIGNED = "aligned"
@@ -48,11 +52,76 @@ class ClientModel(nn.Module):
     def forward(self, x):
         return self.layers(x)
 
+class ResNet50ClientModel(nn.Module):
+
+    def __init__(self, input_size: int, embedding_size: int, image_width: Optional[int] = None, pretrained: bool = True):
+        super().__init__()
+        self.input_size = input_size
+        self.embedding_size = embedding_size
+        
+        if image_width is None:
+            self.image_width = int(math.sqrt(input_size))
+        else:
+            self.image_width = image_width
+            
+        # Calculate height based on input size and width
+        self.image_height = math.ceil(input_size / self.image_width)
+        
+        # Load a pretrained ResNet50 model
+        self.resnet = models.resnet50(pretrained=pretrained)
+        
+        # Modify the first layer to accept single-channel input instead of 3-channel (RGB)
+        if pretrained:
+            first_conv_weights = self.resnet.conv1.weight.data.clone()
+            # Average the weights across the RGB channels to create weights for a single channel
+            self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            with torch.no_grad():
+                self.resnet.conv1.weight.data = torch.mean(first_conv_weights, dim=1, keepdim=True)
+        else:
+            self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        num_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Identity()  # Remove the classification layer
+        
+        self.fc_embedding = nn.Linear(num_features, embedding_size)
+    
+    def forward(self, x):
+        batch_size = x.shape[0]
+        
+        # Pad the input to fit the image dimensions if needed
+        padded_size = self.image_width * self.image_height
+        if self.input_size < padded_size:
+            padding = torch.zeros(batch_size, padded_size - self.input_size, device=x.device)
+            x = torch.cat([x, padding], dim=1)
+        
+        x = x.view(batch_size, 1, self.image_height, self.image_width)
+        
+        # Ensure the input is large enough for ResNet (which typically expects at least 224x224)
+        # If the image is too small, we'll upsample it
+        if self.image_height < 224 or self.image_width < 224:
+            x = nn.functional.interpolate(
+                x, 
+                size=(max(224, self.image_height), max(224, self.image_width)),
+                mode='bilinear',
+                align_corners=False
+            )
+        
+        x = self.resnet(x)
+        embedding = self.fc_embedding(x)
+        
+        return embedding
+
 class ServerModel(nn.Module):
-    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int]):
+    def __init__(self, num_clients: int, embedding_size: int, hidden_layers: List[int], aggregate_fn: Callable = None):
         super().__init__()
         
-        total_input_size = num_clients * embedding_size
+        self.aggregate_fn = aggregate_fn
+
+        if self.aggregate_fn is not  None:
+            total_input_size = embedding_size
+        else:
+            total_input_size = num_clients * embedding_size
+
         layers = []
         prev_size = total_input_size
         
@@ -68,7 +137,12 @@ class ServerModel(nn.Module):
     
     def forward(self, embeddings: List[torch.Tensor]):
         # Concatenate embeddings from all clients
-        combined = torch.cat(embeddings, dim=1)
+        if self.aggregate_fn is not None:
+            combined = self.aggregate_fn(torch.stack(embeddings), dim=0)
+
+        else:
+            combined = torch.cat(embeddings, dim=1)
+
         return self.layers(combined)
 
 class CustomizableVFL:
@@ -96,11 +170,19 @@ class CustomizableVFL:
         
         for i in range(num_clients):
             config = client_models_config[i]
-            model = ClientModel(
-                input_size=len(feature_splits[i]),
-                hidden_layers=config['hidden_layers'],
-                embedding_size=embedding_size
-            ).to(device)
+            if config.get('model_type') == 'resnet50':
+                model = ResNet50ClientModel(
+                    input_size=len(feature_splits[i]),
+                    embedding_size=embedding_size,
+                    image_width=config.get('image_width', None),
+                    pretrained=config.get('pretrained', True)
+                ).to(device)
+            else:
+                model = ClientModel(
+                    input_size=len(feature_splits[i]),
+                    hidden_layers=config['hidden_layers'],
+                    embedding_size=embedding_size
+                ).to(device)
             self.client_models.append(model)
             self.client_optimizers.append(
                 optim.Adam(model.parameters(), lr=config.get('learning_rate', 0.0001))
@@ -110,7 +192,8 @@ class CustomizableVFL:
         self.top_model = ServerModel(
             num_clients=num_clients,
             embedding_size=embedding_size,
-            hidden_layers=top_model_config['hidden_layers']
+            hidden_layers=top_model_config['hidden_layers'],
+            aggregate_fn=top_model_config.get('aggregate_fn', None)
         ).to(device)
 
         self.top_optimizer = optim.Adam(
@@ -270,8 +353,9 @@ class CustomizableVFL:
         subset_size: Optional[int] = None,
         train_size: float = 0.7,
         unaligned_ratio: float = 0.8
-    ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
-        """Same as before - preparation of aligned or unaligned datasets"""
+        ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], List[Tuple[torch.Tensor, torch.Tensor]]]:
+
+        """Prepare datasets with normalization for client models"""
         client_data = []
         client_labels = []
 
@@ -285,8 +369,24 @@ class CustomizableVFL:
             )
             
             for feature_split in self.feature_splits:
-                X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
-                X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
+                # Extract features for this client
+                X_train_client = X_train_full[:, feature_split]
+                X_test_client = X_test_full[:, feature_split]
+                
+                # Normalize the data for this client
+                # Calculate mean and std on training data
+                mean = np.mean(X_train_client, axis=0)
+                std = np.std(X_train_client, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                # Apply normalization
+                X_train_normalized = (X_train_client - mean) / std
+                X_test_normalized = (X_test_client - mean) / std
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
                 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
@@ -294,56 +394,73 @@ class CustomizableVFL:
                 client_labels.append((y_train_tensor, y_test_tensor))
 
         elif self.data_alignment == DataAlignment.UNALIGNED:
-
             X_train_full, X_test_full, y_train, y_test = train_test_split(
                 X, y, train_size=train_size, shuffle=True
             )
 
-            # pdb.set_trace()
             all_indices_random = np.random.permutation(len(X_train_full))
             unaligned_indices = all_indices_random[:int(len(X_train_full) * unaligned_ratio)]
             aligned_indices = np.setdiff1d(np.arange(len(X_train_full)), unaligned_indices)
             
             for feature_split in self.feature_splits:
-
                 train_unaligned_indices = unaligned_indices.copy()
-                np.random.shuffle(unaligned_indices)
+                np.random.shuffle(aligned_indices)
                 train_aligned_indices = aligned_indices
-                client_indices = np.concatenate([train_aligned_indices, train_unaligned_indices]) # concatenate aligned and unaligned indices
+                client_indices = np.concatenate([train_aligned_indices, train_unaligned_indices])
 
-                X_train = torch.tensor(X_train_full[:, feature_split], dtype=torch.float32).to(self.device)
-                X_train = X_train[list(client_indices)]
-                X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
-                y_train_tensor = torch.tensor(y_train[list(client_indices)], dtype=torch.float32).reshape(-1, 1).to(self.device)
+                # Extract features for this client
+                X_train_client = X_train_full[:, feature_split]
+                X_test_client = X_test_full[:, feature_split]
+                
+                # Normalize the data
+                mean = np.mean(X_train_client, axis=0)
+                std = np.std(X_train_client, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                X_train_normalized = (X_train_client - mean) / std
+                X_test_normalized = (X_test_client - mean) / std
+                
+                # Apply client indices after normalization
+                X_train_normalized = X_train_normalized[list(client_indices)]
+                y_train_client = y_train[list(client_indices)]
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
+                y_train_tensor = torch.tensor(y_train_client, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_tensor, y_test_tensor))
 
         else:
-
             all_indices_random = np.random.permutation(len(X))
             unaligned_indices = all_indices_random[:int(len(X) * unaligned_ratio)]
             aligned_indices = np.setdiff1d(np.arange(len(X)), unaligned_indices)
 
             for feature_split in self.feature_splits:
                 X_client = X[:, feature_split]
-                # client_unaligned_indices = np.random.permutation(len(X_client))
-                # client_unaligned_indices = np.random.shuffle(client_unaligned_indices)
-                # client_aligned_indices = aligned_indices
-                # indices = np.concatenate([client_aligned_indices, client_unaligned_indices])
-                # client_size = int(len(indices) * unaligned_ratio)
-                # client_indices = indices[:client_size]
                 
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X[:, feature_split],
+                    X_client,
                     y,
                     train_size=train_size,
                     shuffle=False
                 )
                 
-                X_train = torch.tensor(X_train, dtype=torch.float32).to(self.device)
-                X_test = torch.tensor(X_test, dtype=torch.float32).to(self.device)
+                # Normalize the data
+                mean = np.mean(X_train, axis=0)
+                std = np.std(X_train, axis=0)
+                # Replace zero std with 1 to avoid division by zero
+                std = np.where(std == 0, 1.0, std)
+                
+                X_train_normalized = (X_train - mean) / std
+                X_test_normalized = (X_test - mean) / std
+                
+                # Convert to tensors
+                X_train = torch.tensor(X_train_normalized, dtype=torch.float32).to(self.device)
+                X_test = torch.tensor(X_test_normalized, dtype=torch.float32).to(self.device)
                 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(self.device)
                 
@@ -431,7 +548,7 @@ class CustomizableVFL:
                     total_loss += loss
                     bar.set_postfix(mse=float(loss))
             
-            print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
+            # print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
             # set_trace()
             min_test_length = min(len(test_data) for _, test_data in client_data)
             test_data = [test_data[:min_test_length] for _, test_data in client_data]
@@ -456,8 +573,31 @@ class CustomizableVFL:
             'history': history
         }
 
+def split_features(num_features: int, num_clients: int, distribution: Optional[List[int]] = None) -> List[List[int]]:
+    if distribution is None:
+        # If no distribution is provided, divide features evenly
+        num_clients = 3  # Default number of clients
+        base_size = num_features // num_clients
+        remainder = num_features % num_clients
+        
+        distribution = [base_size] * num_clients
+        for i in range(remainder):
+            distribution[i] += 1
+    
+    if sum(distribution) != num_features:
+        raise ValueError("Distribution does not match the total number of features.")
+    
+    feature_splits = []
+    start = 0
+    for size in distribution:
+        feature_splits.append(list(range(start, start + size)))
+        start += size
+    
+    return feature_splits
+
 def fetch_data():
     df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    # set_trace()
     df = df.drop(df.columns[0], axis=1)  # Drop the first column
 
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
@@ -470,6 +610,85 @@ def fetch_data():
     target = target.to_numpy()
     # set_trace()
     return data, target, data.shape[1]
+
+def modify_bbox_coordinates(bndbox, original_image_size, new_image_size):
+
+    bndbox['xmin'] = int(int(bndbox['xmin']) * new_image_size[1] / original_image_size[1])
+    bndbox['xmax'] = int(int(bndbox['xmax']) * new_image_size[1] / original_image_size[1])
+    bndbox['ymin'] = int(int(bndbox['ymin']) * new_image_size[0] / original_image_size[0])
+    bndbox['ymax'] = int(int(bndbox['ymax']) * new_image_size[0] / original_image_size[0])
+
+    return bndbox
+
+
+def fetch_biketrip():
+    df = pd.read_csv('Datasets/biketrip/For_modeling.csv')
+    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    print(df.head())
+    target = df[df.columns[1]]
+    df = df.drop(df.columns[:2],axis=1)
+    data = df
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
+
+def fetch_superconductivity():
+    df = pd.read_csv('Datasets/superconductivity/train.csv')
+    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
+
+
+def fetch_ice_pets():
+    
+    images_path = 'Datasets/ice_pets/images/'
+    labels_path = 'Datasets/ice_pets/annotations/xmls/'
+
+    images = []
+    labels = []
+    image_size = (400, 600)
+
+
+    #sorted list of images
+    for filename in sorted(os.listdir(labels_path)):
+        # print(filename)
+
+        image_name = filename.split('.')[0] + '.jpg'
+        # open image and save it to a list
+        image_np = cv2.imread(images_path + image_name)
+        # if corrupt image
+        if image_np is None:
+            continue
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+        original_image_size = image_np.shape
+        image_np = cv2.resize(image_np, image_size)
+        image_np = image_np.flatten()
+        # add to list
+        images.append(image_np)
+
+        with open(labels_path + filename) as xml_file:
+            data_dict = xmltodict.parse(xml_file.read())
+
+            if isinstance(data_dict['annotation']['object'], list):
+                bndbox = data_dict['annotation']['object'][0]['bndbox']
+            else:
+                bndbox = data_dict['annotation']['object']['bndbox']
+
+            bndbox = modify_bbox_coordinates(bndbox, original_image_size, image_size)
+            label = [int(bndbox['xmin']), int(bndbox['ymin']), int(bndbox['xmax']), int(bndbox['ymax'])]
+            labels.append(label)
+
+    images = np.vstack(images)
+    labels = np.array(labels)
+    
+    return images, labels, image_size
 
 def run_program():
 
@@ -488,31 +707,39 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    X, y, feat_no = fetch_data()
+    # X, y, feat_no = fetch_data()
+    # X, y, feat_no = fetch_biketrip()
+    # X, y, feat_no = fetch_superconductivity()
+    X, y = fetch_california_housing(return_X_y=True)
+    # feat_no = 8
     # set_trace()
     print("data loaded")
     
     # Configuration
-    num_clients = 3
-    feature_splits = [
-        [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
-        [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
-        [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
-    ]
+    num_clients = 2
+    feat_no = X.shape[1]  
+    feature_splits = split_features(feat_no, num_clients)
+    # feature_splits = [
+    #     [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
+    #     [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
+    #     [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
+    # ]
     
     # Client model configurations
     client_models_config = [
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001},
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001},
-        {'hidden_layers': [8, 4], 'learning_rate': 0.001}
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
+        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
+        {'hidden_layers': [8, 4], 'learning_rate': 0.001, 'image_width': 600}
     ]
 
     print("client config loaded")
 
     # Top model configuration
     top_model_config = {
+        
         'hidden_layers': [24, 12],
-        'learning_rate': 0.001
+        'learning_rate': 0.001,
+        # 'aggregate_fn': torch.mean
     }
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -532,7 +759,7 @@ def run_program():
     print("VFL initialized")
     
     # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250000, train_size=0.8, unaligned_ratio=unaligned_ratio)
+    client_data, client_labels = vfl.prepare_datasets(X, y, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     
@@ -541,7 +768,7 @@ def run_program():
         client_data=client_data,
         client_labels=client_labels,
         n_epochs=100,
-        batch_size=1024
+        batch_size=64
     )
     
     print(f"Final Best MSE: {results['best_mse']}")

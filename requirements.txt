@@ -4,3 +4,7 @@ scikit-learn
 pdb
 tqdm
 typing
+torchvision
+opencv-python
+matplotlib
+xmltodict
