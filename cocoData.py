@@ -2,7 +2,7 @@ import torch
 import os
 import cv2
 
-def load_coco8_data(dataset_path="datasets/coco8", target_size=(480, 640)):
+def load_coco_data(dataset_path="datasets/coco", target_size=(480, 640)):
     """
     Load and combine both train and val splits while maintaining:
     - Consistent tensor dimensions
@@ -61,5 +61,5 @@ def load_coco8_data(dataset_path="datasets/coco8", target_size=(480, 640)):
     train_X, train_y = load_split('train')
     val_X, val_y = load_split('val')
     
-    return train_X + val_X, train_y + val_y, target_size[1]
+    return train_X ,train_y,val_X,val_y,target_size[1]
 

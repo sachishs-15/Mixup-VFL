@@ -19,7 +19,7 @@ from torchvision import models
 import cv2
 import xmltodict
 import os
-from coco8Data import load_coco8_data
+from cocoData import load_coco_data
 from Loss import object_detection_loss
 import torch.nn.functional as F
 
@@ -399,6 +399,8 @@ class CustomizableVFL:
         self,
         X: np.ndarray,
         y: List[List[int]],
+        X_test_full:np.ndarray,
+        y_test_full:List[List[int]],
         subset_size: Optional[int] = None,
         train_size: float = 0.7,
         unaligned_ratio: float = 0.8,
@@ -418,9 +420,10 @@ class CustomizableVFL:
         y_tensors = [torch.tensor(labels, dtype=torch.float32).to(self.device) for labels in y]
 
         if self.data_alignment == DataAlignment.ALIGNED:
-            X_train_full, X_test_full, y_train, y_test = train_test_split(
-                X, y_tensors, train_size=train_size, shuffle=True
-            )
+            X_train_full=X
+            y_train_full=y
+            X_test=X_test_full
+            y_test=y_test_full
             
             for feature_split in self.feature_splits:
                 (s,e)=feature_split[1]
@@ -431,16 +434,17 @@ class CustomizableVFL:
                 X_test = torch.stack([
                 torch.tensor(img[:, s:e, :], dtype=torch.float32).to(self.device) for img in X_test_full
                 ])
-                y_train_list = [y_train[i] for i in range(len(y_train))]
+                y_train_list = [y_train_full[i] for i in range(len(y_train_full))]
                 y_test_list = [y_test[i] for i in range(len(y_test))]
 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_list, y_test_list))
             
         elif self.data_alignment == DataAlignment.UNALIGNED:
-            X_train_full, X_test_full, y_train, y_test = train_test_split(
-                X, y_tensors, train_size=train_size, shuffle=True
-            )
+            X_train_full=X
+            y_train_full=y
+            X_test=X_test_full
+            y_test=y_test_full
 
             all_indices_random = np.random.permutation(len(X_train_full))
             unaligned_indices = all_indices_random[:int(len(X_train_full) * unaligned_ratio)]
@@ -455,35 +459,12 @@ class CustomizableVFL:
                 X_train = X_train[list(client_indices)]
                 X_test = torch.tensor(X_test_full[:, feature_split], dtype=torch.float32).to(self.device)
                 
-                y_train_list = [y_train[i] for i in client_indices]
+                y_train_list = [y_train_full[i] for i in client_indices]
                 y_test_list = [y_test[i] for i in range(len(y_test))]
                 
                 client_data.append((X_train, X_test))
                 client_labels.append((y_train_list, y_test_list))
         
-        else:
-            all_indices_random = np.random.permutation(len(X))
-            unaligned_indices = all_indices_random[:int(len(X) * unaligned_ratio)]
-            aligned_indices = np.setdiff1d(np.arange(len(X)), unaligned_indices)
-            
-            for feature_split in self.feature_splits:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X[:, feature_split],
-                    y_tensors,
-                    train_size=train_size,
-                    shuffle=False
-                )
-                
-                X_train = torch.tensor(X_train, dtype=torch.float32).to(self.device)
-                X_test = torch.tensor(X_test, dtype=torch.float32).to(self.device)
-                
-                y_train_list = [y_train[i] for i in range(len(y_train))]
-                y_test_list = [y_test[i] for i in range(len(y_test))]
-                
-                client_data.append((X_train, X_test))
-                client_labels.append((y_train_list, y_test_list))
-
-    
         
         return client_data, client_labels
 
@@ -728,7 +709,7 @@ def run_program():
     print(f"Data Alignment: {algn_type}")
     
     # Load data
-    X,y,feat_no= load_coco8_data()
+    X,y,X_test,y_test,feat_no= load_coco_data()
     print("data loaded")
     
     # Configuration
@@ -781,7 +762,7 @@ def run_program():
     print("VFL initialized")
     
 
-    client_data, client_labels = vfl.prepare_datasets(X, y, subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio)
+    client_data, client_labels = vfl.prepare_datasets(X, y,X_test,y_test,subset_size=250, train_size=0.8, unaligned_ratio=unaligned_ratio)
 
     print("data prepared")
     

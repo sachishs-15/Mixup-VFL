@@ -6,7 +6,7 @@ import cv2
 import matplotlib.pyplot as plt
 
 # Load YAML file
-yaml_path = "./config/coco8.yaml"
+yaml_path = "./config/coco.yaml"
 with open(yaml_path, "r") as file:
     config = yaml.safe_load(file)
 
@@ -18,7 +18,7 @@ download_url = config["download"]
 os.makedirs(dataset_path, exist_ok=True)
 
 # Define zip file path
-zip_path = os.path.join(dataset_path, "coco8.zip")
+zip_path = os.path.join(dataset_path, "coco.zip")
 
 # Check if dataset is already downloaded
 if not os.listdir(dataset_path):  # Check if directory is empty
