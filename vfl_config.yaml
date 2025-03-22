@@ -1,7 +1,7 @@
 exp: 0
 dataset:
-  name: superconductivity
-  subset_size: 20000
+  name: bike_rental
+  subset_size: 10000
   train_test_ratio: 0.8
 alignment:
   type: unaligned
@@ -9,11 +9,11 @@ alignment:
 model:
   num_clients: 2
   embedding_size: 16
-  mixup_strategy: max_mixup
+  mixup_strategy: mean_mixup
   client_models:
   - hidden_layers:
-    - 64
     - 32
+    - 64
     learning_rate: 0.001
     model_type: mlp
   - hidden_layers:
@@ -23,16 +23,16 @@ model:
     model_type: mlp
   top_model:
     hidden_layers:
-    - 64
+    - 32
     - 16
     learning_rate: 0.001
     aggregate_fn: null
 training:
   n_epochs: 100
-  batch_size: 64
-  device: cuda
+  batch_size: 16
+  device: cpu
   wandb:
-    enabled: false
+    enabled: true
     project: VFL-Regression
     entity: ayushferro123-iit-kharagpur
     name: experiment

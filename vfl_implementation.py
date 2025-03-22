@@ -605,7 +605,8 @@ class CustomizableVFL:
 
         if wandb.run is not None:
             wandb.log({
-                "running_time": running_time
+                "running_time": running_time,
+                "best_rmse": math.sqrt(best_mse)
             })
             
         return {
@@ -650,9 +651,11 @@ def housing():
 def onlinenews_popularity():
 
     df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/OnlineNewsPopularity.csv')
-    target = df[df.columns[1]]
+    target = df[df.columns[-1]]
     df = df.drop(df.columns[:1], axis=1)
-    data = df
+    df = df.drop(df.columns[13:28], axis=1)
+    df = df.drop(df.columns[31:39], axis=1)
+    data = df[df.columns[:-1]]
     data = data.to_numpy()
     target = target.to_numpy()
     return data, target, data.shape[1]
@@ -660,6 +663,7 @@ def onlinenews_popularity():
 def autompg():
 
     df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/auto-mpg.csv')
+     # Drop the first column
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     data = df[df.columns[0:-1]]
     target = df[df.columns[-1]]
@@ -673,8 +677,8 @@ def bike_rental():
     df = df.drop(df.columns[:2], axis=1)
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
-    target = df[df.columns[1]]
-    data = df
+    target = df[df.columns[-1]]
+    data = df[df.columns[:-1]]
     data = data.to_numpy()
     target = target.to_numpy()
     return data, target, data.shape[1]
@@ -689,7 +693,7 @@ def wine():
     return X, y, X.shape[1]
 
 def mining_process():
-    df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
     df = df.drop(df.columns[0], axis=1)  # Drop the first column
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)

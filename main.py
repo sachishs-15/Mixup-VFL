@@ -13,11 +13,13 @@ from psycopg2 import sql
 from datetime import datetime
 from pdb import set_trace
 
-DB_HOST = "yamanote.proxy.rlwy.net"
-DB_PORT = 42901
+DB_HOST = "switchback.proxy.rlwy.net"
+DB_PORT = 21021
 DB_NAME = "railway"
 DB_USER = "postgres"
-DB_PASSWORD = "TvROSyEFxjKowwovGUSBuLHumfmhzuck"
+DB_PASSWORD = "uqJZIoRmTnNLAGvRqrnhHEnVxBwvMwjc"
+# postgresql://postgres:uqJZIoRmTnNLAGvRqrnhHEnVxBwvMwjc@switchback.proxy.rlwy.net:21021/railway
+conn = None
 
 conn = None
 
@@ -89,6 +91,10 @@ from vfl_implementation import (
     mining_process,
     biketrip,
     superconductivity,
+   onlinenews_popularity,
+    housing,
+    bike_rental,
+    autompg,
     ice_pets
 )
 
@@ -106,6 +112,14 @@ def get_dataset(dataset_name):
         return superconductivity()
     elif dataset_name == "ice_pets":
         return ice_pets()
+    elif dataset_name == "housing":
+        return housing()
+    elif dataset_name == "bike_rental":
+        return bike_rental()
+    elif dataset_name == "onlinenews_popularity":
+        return onlinenews_popularity()
+    elif dataset_name == "autompg":
+        return autompg()
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
@@ -205,22 +219,23 @@ def run_program(config_path):
     print(f"Training completed. Final Best MSE: {results['best_mse']}, RMSE: {math.sqrt(results['best_mse'])}")
 
     # Insert results into the database
-    res = {
-        "exp": config['exp'],
-        "dataset": dataset_config['name'],
-        "subset_size": dataset_config['subset_size'],
-        "train_test_ratio":  dataset_config['train_test_ratio'],
-        "aligned": True if data_alignment == DataAlignment.ALIGNED else False,
-        "unaligned_ratio": alignment_config['unalignment_ratio'] if data_alignment == DataAlignment.UNALIGNED else 0,
-        "num_clients":  model_config['num_clients'],
-        "embedding_size": model_config['embedding_size'],
-        "mixup_strategy": model_config['mixup_strategy'],
-        "epochs": training_config['n_epochs'],
-        "batch_size": training_config['batch_size'],
-        "best_rmse": math.sqrt(results['best_mse']),
-    }
+    # res = {
+    #     "exp": config['exp'],
+    #     "dataset": dataset_config['name'],
+    #     "subset_size": dataset_config['subset_size'],
+    #     "train_test_ratio":  dataset_config['train_test_ratio'],
+    #     "aligned": True if data_alignment == DataAlignment.ALIGNED else False,
+    #     "unaligned_ratio": alignment_config['unalignment_ratio'] if data_alignment == DataAlignment.UNALIGNED else 0,
+    #     "num_clients":  model_config['num_clients'],
+    #     "embedding_size": model_config['embedding_size'],
+    #     "mixup_strategy": model_config['mixup_strategy'],
+    #     "epochs": training_config['n_epochs'],
+    #     "batch_size": training_config['batch_size'],
+    #     "best_rmse": math.sqrt(results['best_mse']),
+    # }
 
-    insert_ml_config(res)
+    # # insert_ml_config(res)
+    # wandb.log(res)
 
     return results
 
