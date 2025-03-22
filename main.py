@@ -206,7 +206,7 @@ def run_program(config_path):
 
     # Insert results into the database
     res = {
-       
+        "exp": config['exp'],
         "dataset": dataset_config['name'],
         "subset_size": dataset_config['subset_size'],
         "train_test_ratio":  dataset_config['train_test_ratio'],
@@ -217,7 +217,6 @@ def run_program(config_path):
         "mixup_strategy": model_config['mixup_strategy'],
         "epochs": training_config['n_epochs'],
         "batch_size": training_config['batch_size'],
-        "best_mse": results['best_mse'],
         "best_rmse": math.sqrt(results['best_mse']),
     }
 
