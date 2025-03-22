@@ -1,6 +1,6 @@
 dataset:
-  name: california_housing
-  subset_size: 20000
+  name: wine
+  subset_size: 100
   train_test_ratio: 0.8
 alignment:
   type: unaligned
@@ -28,7 +28,7 @@ model:
     aggregate_fn: null
 training:
   n_epochs: 100
-  batch_size: 64
+  batch_size: 4
   device: cuda
   wandb:
     enabled: false

@@ -168,6 +168,7 @@ class CustomizableVFL:
         # Initialize client models
         self.client_models = []
         self.client_optimizers = []
+        self.client_schedulers = []
         
         for i in range(num_clients):
             config = client_models_config[i]
@@ -184,9 +185,16 @@ class CustomizableVFL:
                     hidden_layers=config['hidden_layers'],
                     embedding_size=embedding_size
                 ).to(device)
+
             self.client_models.append(model)
             self.client_optimizers.append(
                 optim.Adam(model.parameters(), lr=config.get('learning_rate', 0.0001))
+            )
+            self.client_schedulers.append(
+                optim.lr_scheduler.CosineAnnealingLR(
+                    self.client_optimizers[i],
+                    T_max=config.get('n_epochs', 100)
+                )
             )
         
         # Initialize top model with aggregate function if specified
@@ -206,6 +214,10 @@ class CustomizableVFL:
             lr=top_model_config.get('learning_rate', 0.0001)
         )
 
+        self.top_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.top_optimizer,
+            T_max=top_model_config.get('n_epochs', 100)
+        )
         # Mixup strategy for labels
         if self.mixup_strategy == MixupStrategy.NO_MIXUP:
             self.mixup_fn = self.no_mixup
@@ -555,6 +567,12 @@ class CustomizableVFL:
 
                     total_loss += loss
                     bar.set_postfix(mse=float(loss))
+
+            # Step the learning rate scheduler
+            for scheduler in self.client_schedulers:
+                scheduler.step()
+                
+            self.top_scheduler.step()
             
             # Evaluate on test data
             min_test_length = min(len(test_data) for _, test_data in client_data)
