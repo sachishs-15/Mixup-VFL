@@ -418,7 +418,7 @@ class CustomizableVFL:
             
             for feature_split in self.feature_splits:
                 train_unaligned_indices = unaligned_indices.copy()
-                np.random.shuffle(aligned_indices)
+                np.random.shuffle(unaligned_indices)
                 train_aligned_indices = aligned_indices
                 client_indices = np.concatenate([train_aligned_indices, train_unaligned_indices])
 
