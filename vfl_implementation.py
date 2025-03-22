@@ -7,8 +7,6 @@ from enum import Enum
 from typing import List, Tuple, Dict, Optional, Callable
 import copy
 import tqdm
-import pdb
-from pdb import set_trace
 import argparse
 from sklearn.datasets import fetch_california_housing, load_wine
 import random
@@ -19,6 +17,10 @@ from torchvision import models
 import cv2
 import xmltodict
 import os
+import wandb
+import yaml
+import sys
+import time
 
 class DataAlignment(Enum):
     ALIGNED = "aligned"
@@ -139,7 +141,6 @@ class ServerModel(nn.Module):
         # Concatenate embeddings from all clients
         if self.aggregate_fn is not None:
             combined = self.aggregate_fn(torch.stack(embeddings), dim=0)
-
         else:
             combined = torch.cat(embeddings, dim=1)
 
@@ -170,7 +171,7 @@ class CustomizableVFL:
         
         for i in range(num_clients):
             config = client_models_config[i]
-            if config.get('model_type') == 'resnet50':
+            if config.get('model_type', 'mlp') == 'resnet50':
                 model = ResNet50ClientModel(
                     input_size=len(feature_splits[i]),
                     embedding_size=embedding_size,
@@ -188,12 +189,16 @@ class CustomizableVFL:
                 optim.Adam(model.parameters(), lr=config.get('learning_rate', 0.0001))
             )
         
-        # Initialize top model
+        # Initialize top model with aggregate function if specified
+        aggregate_fn = None
+        if top_model_config.get('aggregate_fn') == 'mean':
+            aggregate_fn = torch.mean
+            
         self.top_model = ServerModel(
             num_clients=num_clients,
             embedding_size=embedding_size,
             hidden_layers=top_model_config['hidden_layers'],
-            aggregate_fn=top_model_config.get('aggregate_fn', None)
+            aggregate_fn=aggregate_fn
         ).to(device)
 
         self.top_optimizer = optim.Adam(
@@ -243,8 +248,6 @@ class CustomizableVFL:
         client_batch_labels: List[torch.Tensor],
         client_embeddings: List[torch.Tensor]
     ) -> torch.Tensor:
-        
-        # set_trace()
         embeddings = [embedding.detach().cpu().numpy() for embedding in client_embeddings]
         client_importance = {}
     
@@ -262,7 +265,6 @@ class CustomizableVFL:
         for client_id in client_importance:
             client_importance[client_id] /= total_importance
 
-        # set_trace()
         # Weighted average of labels
         weighted_labels = torch.zeros_like(client_batch_labels[0])
         for client_id, importance in client_importance.items():
@@ -487,7 +489,6 @@ class CustomizableVFL:
         final_prediction = self.top_model(client_embeddings)
         
         # Calculate loss (using labels from first client if unaligned)
-        # set_trace()
         loss = self.loss_fn(final_prediction, self.mixup_fn(client_batch_labels, client_embeddings))
         
         # Backward pass
@@ -525,7 +526,10 @@ class CustomizableVFL:
         best_mse = np.inf
         best_weights = None
         history = []
-        
+
+        # save running time to wandb
+        running_time = 0
+
         for epoch in range(n_epochs):
             total_loss = 0.0
             
@@ -544,16 +548,29 @@ class CustomizableVFL:
                         for train_labels, _ in client_labels
                     ]
                     
+                    start_time = time.time()
                     loss = self.train_step(client_batch_data, client_batch_labels)
+                    end_time = time.time()
+                    running_time += end_time - start_time
+
                     total_loss += loss
                     bar.set_postfix(mse=float(loss))
             
-            # print(f"Epoch {epoch}, Average MSE: {total_loss/len(batch_start)}")
-            # set_trace()
+            # Evaluate on test data
             min_test_length = min(len(test_data) for _, test_data in client_data)
             test_data = [test_data[:min_test_length] for _, test_data in client_data]
             mse = self.evaluate(test_data, client_labels[0][1][:min_test_length])
             print(f"Epoch {epoch}, Test RMSE: {math.sqrt(mse)}")
+            
+            # Log to wandb if enabled
+            if wandb.run is not None:
+                wandb.log({
+                    "epoch": epoch,
+                    "train_loss": total_loss/len(batch_start),
+                    "test_mse": mse,
+                    "test_rmse": math.sqrt(mse)
+                })
+            
             history.append(mse)
             
             if mse < best_mse:
@@ -567,7 +584,12 @@ class CustomizableVFL:
             for model, weights in zip(self.client_models, best_weights['client_models']):
                 model.load_state_dict(weights)
             self.top_model.load_state_dict(best_weights['top_model'])
-        
+
+        if wandb.run is not None:
+            wandb.log({
+                "running_time": running_time
+            })
+            
         return {
             'best_mse': best_mse,
             'history': history
@@ -576,7 +598,6 @@ class CustomizableVFL:
 def split_features(num_features: int, num_clients: int, distribution: Optional[List[int]] = None) -> List[List[int]]:
     if distribution is None:
         # If no distribution is provided, divide features evenly
-        num_clients = 3  # Default number of clients
         base_size = num_features // num_clients
         remainder = num_features % num_clients
         
@@ -595,59 +616,56 @@ def split_features(num_features: int, num_clients: int, distribution: Optional[L
     
     return feature_splits
 
-def fetch_data():
-    df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
-    # set_trace()
-    df = df.drop(df.columns[0], axis=1)  # Drop the first column
+# Dataset loading functions
+def california_housing():
+    
+    X, y = fetch_california_housing(return_X_y=True)
+    return X, y, X.shape[1]
 
+def wine():
+    X, y = load_wine(return_X_y=True)
+    return X, y, X.shape[1]
+
+def mining_process():
+    df = pd.read_csv('Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
+    df = df.drop(df.columns[0], axis=1)  # Drop the first column
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
-
     data = df[df.columns[:-1]]
     target = df[df.columns[-1]]
-
     data = data.to_numpy()
     target = target.to_numpy()
-    # set_trace()
+    return data, target, data.shape[1]
+
+def biketrip():
+    df = pd.read_csv('Datasets/biketrip/For_modeling.csv')
+    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    target = df[df.columns[1]]
+    df = df.drop(df.columns[:2], axis=1)
+    data = df
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
+
+def superconductivity():
+    df = pd.read_csv('Datasets/superconductivity/train.csv')
+    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+    data = data.to_numpy()
+    target = target.to_numpy()
     return data, target, data.shape[1]
 
 def modify_bbox_coordinates(bndbox, original_image_size, new_image_size):
-
     bndbox['xmin'] = int(int(bndbox['xmin']) * new_image_size[1] / original_image_size[1])
     bndbox['xmax'] = int(int(bndbox['xmax']) * new_image_size[1] / original_image_size[1])
     bndbox['ymin'] = int(int(bndbox['ymin']) * new_image_size[0] / original_image_size[0])
     bndbox['ymax'] = int(int(bndbox['ymax']) * new_image_size[0] / original_image_size[0])
-
     return bndbox
 
-
-def fetch_biketrip():
-    df = pd.read_csv('Datasets/biketrip/For_modeling.csv')
-    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
-    df = df.astype(float)
-    print(df.head())
-    target = df[df.columns[1]]
-    df = df.drop(df.columns[:2],axis=1)
-    data = df
-
-    data = data.to_numpy()
-    target = target.to_numpy()
-    return data, target, data.shape[1]
-
-def fetch_superconductivity():
-    df = pd.read_csv('Datasets/superconductivity/train.csv')
-    df = df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
-    df = df.astype(float)
-    data = df[df.columns[:-1]]
-    target = df[df.columns[-1]]
-
-    data = data.to_numpy()
-    target = target.to_numpy()
-    return data, target, data.shape[1]
-
-
-def fetch_ice_pets():
-    
+def ice_pets():
     images_path = 'Datasets/ice_pets/images/'
     labels_path = 'Datasets/ice_pets/annotations/xmls/'
 
@@ -655,22 +673,19 @@ def fetch_ice_pets():
     labels = []
     image_size = (400, 600)
 
-
-    #sorted list of images
+    # Sorted list of images
     for filename in sorted(os.listdir(labels_path)):
-        # print(filename)
-
         image_name = filename.split('.')[0] + '.jpg'
-        # open image and save it to a list
+        # Open image and save it to a list
         image_np = cv2.imread(images_path + image_name)
-        # if corrupt image
+        # If corrupt image
         if image_np is None:
             continue
         image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
         original_image_size = image_np.shape
         image_np = cv2.resize(image_np, image_size)
         image_np = image_np.flatten()
-        # add to list
+        # Add to list
         images.append(image_np)
 
         with open(labels_path + filename) as xml_file:
@@ -689,95 +704,3 @@ def fetch_ice_pets():
     labels = np.array(labels)
     
     return images, labels, image_size
-
-def run_program():
-
-    # Parse the Arguments
-    parser = argparse.ArgumentParser(description='Customize how you want to run VFL')
-    parser.add_argument('--unaligned', action='store_true', help='Whether to run VFL with aligned data')
-    parser.add_argument('--unaligned_ratio', type=float, default=0.8, help='Ratio of unaligned data')
-    parser.add_argument('--mixup_strategy', type=str, default='no_mixup', help='Mixup strategy to use', choices=['no_mixup', 'max_mixup', 'mean_mixup', 'importance_mixup', 'model_based_mixup', 'mutual_info_mixup'])
-    
-    args = parser.parse_args()
-
-    algn_type = DataAlignment.ALIGNED if not args.unaligned else DataAlignment.UNALIGNED
-    mixup_strategy = MixupStrategy(args.mixup_strategy)
-    unaligned_ratio = args.unaligned_ratio
-    print(f"Mixup Strategy: {mixup_strategy}")
-    print(f"Data Alignment: {algn_type}")
-    
-    # Load data
-    # X, y, feat_no = fetch_data()
-    # X, y, feat_no = fetch_biketrip()
-    # X, y, feat_no = fetch_superconductivity()
-    X, y = fetch_california_housing(return_X_y=True)
-    # feat_no = 8
-    # set_trace()
-    print("data loaded")
-    
-    # Configuration
-    num_clients = 2
-    feat_no = X.shape[1]  
-    feature_splits = split_features(feat_no, num_clients)
-    # feature_splits = [
-    #     [0, 1, 2, 3, 4, 5, 6, 7],  # Client 1 features
-    #     [8, 9, 10, 11, 12, 13, 14],  # Client 2 features
-    #     [15, 16, 17, 18, 19, 20, 21]      # Client 3 features
-    # ]
-    
-    # Client model configurations
-    client_models_config = [
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
-        {'hidden_layers': [12, 6], 'learning_rate': 0.001, 'image_width': 600},
-        {'hidden_layers': [8, 4], 'learning_rate': 0.001, 'image_width': 600}
-    ]
-
-    print("client config loaded")
-
-    # Top model configuration
-    top_model_config = {
-        
-        'hidden_layers': [24, 12],
-        'learning_rate': 0.001,
-        # 'aggregate_fn': torch.mean
-    }
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    # Initialize VFL system
-    vfl = CustomizableVFL(
-        num_clients=num_clients,
-        feature_splits=feature_splits,
-        data_alignment=algn_type,
-        client_models_config=client_models_config,
-        top_model_config=top_model_config,
-        embedding_size=8,
-        mixup_strategy=mixup_strategy,
-        device=device
-    )
-
-    print("VFL initialized")
-    
-    # Prepare datasets
-    client_data, client_labels = vfl.prepare_datasets(X, y, train_size=0.8, unaligned_ratio=unaligned_ratio)
-
-    print("data prepared")
-    
-    # Train the system
-    results = vfl.train(
-        client_data=client_data,
-        client_labels=client_labels,
-        n_epochs=100,
-        batch_size=64
-    )
-    
-    print(f"Final Best MSE: {results['best_mse']}")
-
-
-seed = 42  # Choose any fixed number
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-
-if __name__ == "__main__":
-    run_program()
