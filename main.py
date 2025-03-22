@@ -8,6 +8,75 @@ import math
 import sys
 from typing import Dict, List, Tuple, Optional
 import wandb
+import psycopg2
+from psycopg2 import sql
+from datetime import datetime
+from pdb import set_trace
+
+DB_HOST = "yamanote.proxy.rlwy.net"
+DB_PORT = 42901
+DB_NAME = "railway"
+DB_USER = "postgres"
+DB_PASSWORD = "TvROSyEFxjKowwovGUSBuLHumfmhzuck"
+
+conn = None
+
+def get_db_connection():
+    """Get or create a database connection"""
+    global conn
+    if conn is None or conn.closed:
+        try:
+            conn = psycopg2.connect(
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASSWORD
+            )
+            conn.autocommit = False  # We'll manage transactions explicitly
+            print("✅ Successfully connected to Railway PostgreSQL database")
+        except Exception as e:
+            print(f"❌ Error connecting to database: {e}")
+            return None
+    return conn
+
+def insert_ml_config(config_data):
+    """Insert a record into the ML experiment configurations table"""
+    global conn
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    cur = conn.cursor()
+    try:
+        # Prepare the column names and values
+        columns = ', '.join(config_data.keys())
+        placeholders = ', '.join(['%s'] * len(config_data))
+
+        # set_trace()
+        
+        # Build the INSERT statement
+        insert_query = f'''
+        INSERT INTO results ({columns})
+        VALUES ({placeholders})
+        RETURNING id
+        '''
+        
+        # Execute the query with the values
+        cur.execute(insert_query, list(config_data.values()))
+        
+        # Get the ID of the new record
+        new_id = cur.fetchone()[0]
+        
+        conn.commit()
+        print(f"✅ Configuration inserted with ID: {new_id}")
+        return new_id
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error inserting data: {e}")
+        return None
+    finally:
+        cur.close()
 
 # Import the custom VFL implementation
 from vfl_implementation import (
@@ -134,9 +203,29 @@ def run_program(config_path):
     )
     
     print(f"Training completed. Final Best MSE: {results['best_mse']}, RMSE: {math.sqrt(results['best_mse'])}")
+
+    # Insert results into the database
+    res = {
+       
+        "dataset": dataset_config['name'],
+        "subset_size": dataset_config['subset_size'],
+        "train_test_ratio":  dataset_config['train_test_ratio'],
+        "aligned": True if data_alignment == DataAlignment.ALIGNED else False,
+        "unaligned_ratio": alignment_config['unalignment_ratio'] if data_alignment == DataAlignment.UNALIGNED else 0,
+        "num_clients":  model_config['num_clients'],
+        "embedding_size": model_config['embedding_size'],
+        "mixup_strategy": model_config['mixup_strategy'],
+        "epochs": training_config['n_epochs'],
+        "batch_size": training_config['batch_size'],
+        "best_mse": results['best_mse'],
+    }
+
+    insert_ml_config(res)
+
     return results
 
 def main():
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Run VFL with config file')
     parser.add_argument('--config', type=str, default='vfl_config.yaml', help='Path to the configuration file')
@@ -154,4 +243,5 @@ def main():
     run_program(args.config)
 
 if __name__ == "__main__":
+    
     main()

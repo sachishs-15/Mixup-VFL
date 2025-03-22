@@ -1,6 +1,6 @@
 dataset:
-  name: biketrip
-  subset_size: 20000
+  name: california_housing
+  subset_size: 200
   train_test_ratio: 0.8
 alignment:
   type: unaligned
