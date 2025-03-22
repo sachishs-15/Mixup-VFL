@@ -1,34 +1,34 @@
 dataset:
-  name: california_housing
-  subset_size: 200
+  name: superconductivity
+  subset_size: 20000
   train_test_ratio: 0.8
 alignment:
   type: unaligned
   unalignment_ratio: 0.8
 model:
   num_clients: 2
-  embedding_size: 8
-  mixup_strategy: mean_mixup
+  embedding_size: 16
+  mixup_strategy: max_mixup
   client_models:
   - hidden_layers:
-    - 12
-    - 6
+    - 64
+    - 32
     learning_rate: 0.001
     model_type: mlp
   - hidden_layers:
-    - 12
-    - 6
+    - 64
+    - 32
     learning_rate: 0.001
     model_type: mlp
   top_model:
     hidden_layers:
-    - 24
-    - 12
+    - 64
+    - 16
     learning_rate: 0.001
     aggregate_fn: null
 training:
   n_epochs: 100
-  batch_size: 4
+  batch_size: 64
   device: cuda
   wandb:
     enabled: false
