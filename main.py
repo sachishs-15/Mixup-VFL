@@ -218,6 +218,7 @@ def run_program(config_path):
         "epochs": training_config['n_epochs'],
         "batch_size": training_config['batch_size'],
         "best_mse": results['best_mse'],
+        "best_rmse": math.sqrt(results['best_mse']),
     }
 
     insert_ml_config(res)
