@@ -8,7 +8,6 @@ from typing import List, Tuple, Dict, Optional, Callable
 import copy
 import tqdm
 import argparse
-from sklearn.datasets import fetch_california_housing, load_wine
 #from sklearn.preprocessing import LabelEncoder
 import random
 import pandas as pd

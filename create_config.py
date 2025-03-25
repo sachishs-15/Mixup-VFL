@@ -7,7 +7,7 @@ import sys
 # Default configuration template
 DEFAULT_CONFIG = {
     "dataset": {
-        "name": "california_housing",
+        "name": "superconductivity",
         "subset_size": None,
         "train_test_ratio": 0.8
     },
@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
     "model": {
         "num_clients": 2,
         "embedding_size": 8,
-        "mixup_strategy": "no_mixup",
+        "mixup_strategy": "mean_mixup",
         "client_models": [
             {
                 "hidden_layers": [12, 6],
@@ -52,12 +52,12 @@ DEFAULT_CONFIG = {
 }
 
 AVAILABLE_DATASETS = [
-    "california_housing",
-    "wine",
-    "mining_process",
-    "biketrip",
+    
+    "concrete",
     "superconductivity",
-    "ice_pets"
+    "real_estate",
+    "energy",
+    "yacht",
 ]
 
 ALIGNMENT_TYPES = ["aligned", "unaligned"]
