@@ -1,24 +1,24 @@
 exp: 0
 dataset:
-  name: bike_rental
-  subset_size: 10000
+  name: superconductivity
+  subset_size: 50000
   train_test_ratio: 0.8
 alignment:
   type: unaligned
-  unalignment_ratio: 0.8
+  unalignment_ratio: 0.2
 model:
   num_clients: 2
   embedding_size: 16
   mixup_strategy: mean_mixup
   client_models:
   - hidden_layers:
-    - 32
-    - 64
+    - 8
+    - 16
     learning_rate: 0.001
     model_type: mlp
   - hidden_layers:
-    - 64
-    - 32
+    - 8
+    - 16
     learning_rate: 0.001
     model_type: mlp
   top_model:
@@ -29,7 +29,7 @@ model:
     aggregate_fn: null
 training:
   n_epochs: 100
-  batch_size: 16
+  batch_size: 32
   device: cpu
   wandb:
     enabled: true

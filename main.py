@@ -86,40 +86,26 @@ from vfl_implementation import (
     DataAlignment,
     MixupStrategy,
     split_features,
-    california_housing,
-    wine,
-    mining_process,
-    biketrip,
+    energy,
+    concrete,
     superconductivity,
-   onlinenews_popularity,
-    housing,
-    bike_rental,
-    autompg,
-    ice_pets
+    real_estate,
+    yacht
 )
 
 def get_dataset(dataset_name):
     """Get dataset based on name from config"""
-    if dataset_name == "california_housing":
-        return california_housing()
-    elif dataset_name == "wine":
-        return wine()
-    elif dataset_name == "mining_process":
-        return mining_process()
-    elif dataset_name == "biketrip":
-        return biketrip()
-    elif dataset_name == "superconductivity":
+
+    if dataset_name == "superconductivity":
         return superconductivity()
-    elif dataset_name == "ice_pets":
-        return ice_pets()
-    elif dataset_name == "housing":
-        return housing()
-    elif dataset_name == "bike_rental":
-        return bike_rental()
-    elif dataset_name == "onlinenews_popularity":
-        return onlinenews_popularity()
-    elif dataset_name == "autompg":
-        return autompg()
+    elif dataset_name == "concrete":
+        return concrete()
+    elif dataset_name == "real_estate":
+        return real_estate()
+    elif dataset_name == "energy":
+        return energy()
+    elif dataset_name == "yacht":
+        return yacht()
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 

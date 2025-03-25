@@ -9,6 +9,7 @@ import copy
 import tqdm
 import argparse
 from sklearn.datasets import fetch_california_housing, load_wine
+#from sklearn.preprocessing import LabelEncoder
 import random
 import pandas as pd
 import math
@@ -357,7 +358,6 @@ class CustomizableVFL:
         weighted_labels = torch.zeros_like(client_batch_labels[0])
         for client_id, importance in client_importance.items():
             weighted_labels += importance * client_batch_labels[client_id]
-        
         return weighted_labels
 
     def prepare_datasets(
@@ -637,43 +637,8 @@ def split_features(num_features: int, num_clients: int, distribution: Optional[L
 
 # Dataset loading functions
 
-def housing():
-     
-     df = pd.read_csv('/home/agv/varun/VFL_AGV/VFL-Regression/Datasets/housing.csv')
-     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
-     df = df.astype(float)
-     data = df[df.columns[:-1]]
-     target = df[df.columns[-1]]
-     data = data.to_numpy()
-     target = target.to_numpy()
-     return data, target, data.shape[1]
-
-def onlinenews_popularity():
-
-    df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/OnlineNewsPopularity.csv')
-    target = df[df.columns[-1]]
-    df = df.drop(df.columns[:1], axis=1)
-    df = df.drop(df.columns[13:28], axis=1)
-    df = df.drop(df.columns[31:39], axis=1)
-    data = df[df.columns[:-1]]
-    data = data.to_numpy()
-    target = target.to_numpy()
-    return data, target, data.shape[1]
-
-def autompg():
-
-    df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/auto-mpg.csv')
-     # Drop the first column
-    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
-    data = df[df.columns[0:-1]]
-    target = df[df.columns[-1]]
-    data = data.to_numpy()
-    target = target.to_numpy()
-    return data, target, data.shape[1]
-
-def bike_rental():
-
-    df=pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/bike_rental_hour.csv',skiprows=1)
+def real_estate():
+    df=pd.read_csv('C:/Users/Dell/Documents/varun/VFL-Regression/Datasets/Real estate.csv',skiprows=1)
     df = df.drop(df.columns[:2], axis=1)
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
@@ -683,18 +648,29 @@ def bike_rental():
     target = target.to_numpy()
     return data, target, data.shape[1]
 
-def california_housing():
-    
-    X, y = fetch_california_housing(return_X_y=True)
-    return X, y, X.shape[1]
+def concrete():
+    df = pd.read_csv("D:/Dell/Concrete_Data_Yeh.csv")
+    target = df[df.columns[-1]]
+    data = df[df.columns[:-1]]
+    print(data.isnull().sum())
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
 
-def wine():
-    X, y = load_wine(return_X_y=True)
-    return X, y, X.shape[1]
+def energy():
+    df = pd.read_csv("D:/Dell/Building Energy Efficiency.csv")
+    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
+    df = df.astype(float)
+    df = df.drop(df.columns[-1],axis=1)
+    data = df[df.columns[:-1]]
+    target = df[df.columns[-1]]
+    data = data.to_numpy()
+    target = target.to_numpy()
+    return data, target, data.shape[1]
 
-def mining_process():
-    df = pd.read_csv('/home/agv/varun/VFL_AGV/Datasets/MiningProcess_Flotation_Plant_Database.csv', skiprows=1)
-    df = df.drop(df.columns[0], axis=1)  # Drop the first column
+
+def yacht():
+    df = pd.read_csv("D:/Dell/yacht_hydrodynamics.csv",skiprows=1)
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
     data = df[df.columns[:-1]]
@@ -703,19 +679,10 @@ def mining_process():
     target = target.to_numpy()
     return data, target, data.shape[1]
 
-def biketrip():
-    df = pd.read_csv('Datasets/biketrip/For_modeling.csv')
-    df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
-    df = df.astype(float)
-    target = df[df.columns[1]]
-    df = df.drop(df.columns[:2], axis=1)
-    data = df
-    data = data.to_numpy()
-    target = target.to_numpy()
-    return data, target, data.shape[1]
+
 
 def superconductivity():
-    df = pd.read_csv('Datasets/superconductivity/train.csv')
+    df = pd.read_csv("D:/Dell/train.csv")
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
     data = df[df.columns[:-1]]
