@@ -1,7 +1,7 @@
 exp: 0
 dataset:
   name: concrete
-  subset_size: 1000
+  subset_size: null
   train_test_ratio: 0.8
 alignment:
   type: unaligned
