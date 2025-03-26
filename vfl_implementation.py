@@ -637,7 +637,7 @@ def split_features(num_features: int, num_clients: int, distribution: Optional[L
 # Dataset loading functions
 
 def real_estate():
-    df=pd.read_csv('C:/Users/Dell/Documents/varun/VFL-Regression/Datasets/Real estate.csv',skiprows=1)
+    df=pd.read_csv('Datasets/REAL_ESTATE.csv',skiprows=1)
     df = df.drop(df.columns[:2], axis=1)
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
@@ -648,7 +648,7 @@ def real_estate():
     return data, target, data.shape[1]
 
 def concrete():
-    df = pd.read_csv("D:/Dell/Concrete_Data_Yeh.csv")
+    df = pd.read_csv("Datasets/CONCRETE_COMPRESSIVE_STRENGTH.csv")
     target = df[df.columns[-1]]
     data = df[df.columns[:-1]]
     print(data.isnull().sum())
@@ -657,7 +657,7 @@ def concrete():
     return data, target, data.shape[1]
 
 def energy():
-    df = pd.read_csv("D:/Dell/Building Energy Efficiency.csv")
+    df = pd.read_csv("Datasets/ENERGY_EFFICIENCY.csv")
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
     df = df.drop(df.columns[-1],axis=1)
@@ -668,8 +668,8 @@ def energy():
     return data, target, data.shape[1]
 
 
-def yacht():
-    df = pd.read_csv("D:/Dell/yacht_hydrodynamics.csv",skiprows=1)
+def yacht_hydrodynamics():
+    df = pd.read_csv("Datasets/YACHT.csv")
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
     data = df[df.columns[:-1]]
@@ -677,11 +677,9 @@ def yacht():
     data = data.to_numpy()
     target = target.to_numpy()
     return data, target, data.shape[1]
-
-
 
 def superconductivity():
-    df = pd.read_csv("D:/Dell/train.csv")
+    df = pd.read_csv("Datasets/SUPERCONDUCTIVITY.csv")
     df = df.map(lambda x: str(x).replace(",", ".") if isinstance(x, str) else x)
     df = df.astype(float)
     data = df[df.columns[:-1]]
@@ -689,50 +687,3 @@ def superconductivity():
     data = data.to_numpy()
     target = target.to_numpy()
     return data, target, data.shape[1]
-
-def modify_bbox_coordinates(bndbox, original_image_size, new_image_size):
-    bndbox['xmin'] = int(int(bndbox['xmin']) * new_image_size[1] / original_image_size[1])
-    bndbox['xmax'] = int(int(bndbox['xmax']) * new_image_size[1] / original_image_size[1])
-    bndbox['ymin'] = int(int(bndbox['ymin']) * new_image_size[0] / original_image_size[0])
-    bndbox['ymax'] = int(int(bndbox['ymax']) * new_image_size[0] / original_image_size[0])
-    return bndbox
-
-def ice_pets():
-    images_path = 'Datasets/ice_pets/images/'
-    labels_path = 'Datasets/ice_pets/annotations/xmls/'
-
-    images = []
-    labels = []
-    image_size = (400, 600)
-
-    # Sorted list of images
-    for filename in sorted(os.listdir(labels_path)):
-        image_name = filename.split('.')[0] + '.jpg'
-        # Open image and save it to a list
-        image_np = cv2.imread(images_path + image_name)
-        # If corrupt image
-        if image_np is None:
-            continue
-        image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
-        original_image_size = image_np.shape
-        image_np = cv2.resize(image_np, image_size)
-        image_np = image_np.flatten()
-        # Add to list
-        images.append(image_np)
-
-        with open(labels_path + filename) as xml_file:
-            data_dict = xmltodict.parse(xml_file.read())
-
-            if isinstance(data_dict['annotation']['object'], list):
-                bndbox = data_dict['annotation']['object'][0]['bndbox']
-            else:
-                bndbox = data_dict['annotation']['object']['bndbox']
-
-            bndbox = modify_bbox_coordinates(bndbox, original_image_size, image_size)
-            label = [int(bndbox['xmin']), int(bndbox['ymin']), int(bndbox['xmax']), int(bndbox['ymax'])]
-            labels.append(label)
-
-    images = np.vstack(images)
-    labels = np.array(labels)
-    
-    return images, labels, image_size
