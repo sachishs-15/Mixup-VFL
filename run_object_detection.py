@@ -13,7 +13,7 @@ from config.config import DataAlignment, MixupStrategy
 from data.utils import split_features
 from mixup_vfl.mixup_vfl import MixupVFL_ObjectDetection
 from data.pascal_voc import load_pascal_data
-from coco import load_coco_data
+from data.coco import load_coco_data
 def run_program():
 
     # Parse the Arguments
