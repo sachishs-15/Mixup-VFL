@@ -1,5 +1,6 @@
-Datasets
-wandb
+Datasets/
+wandb/
+*.pyc
 *.sh
 main.py
 vfl_implementation.py
