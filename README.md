@@ -147,20 +147,3 @@ For regression tasks with only 20% aligned data, our mixup strategies achieved R
 ## Acknowledgments
 
 This research was supported by the Autonomous Ground Vehicle: Autonomy Intelligence (AGV.AI) Research Group at the Indian Institute of Technology Kharagpur.
-
-## Citation
-
-If you use this code in your research, please cite our paper:
-
-```
-@article{gudla2023mixupvfl,
-  title={Mixup-VFL: Leveraging Unaligned Data for Enhanced Regression in Vertical Federated Learning},
-  author={Gudla, Prudhvi and Singla, Sachish and Kumar, Ayush and Chakravarty, Devodita and Thirupathy, Varun and Amalanshu, Avi and Chakravarty, Debashish},
-  journal={},
-  year={2025}
-}
-```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
