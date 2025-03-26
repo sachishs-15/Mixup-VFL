@@ -7,7 +7,7 @@ from torchvision import transforms
 from PIL import Image
 from pdb import set_trace
 
-def load_coco_data(dataset_path="datasets", target_size=(224, 448), num_train=100, num_val=50):
+def load_coco_data(dataset_path="datasets", target_size=(224, 224), num_train=100, num_val=50):
     """
     Load a specified number of train and val images while ensuring:
     - COCO JSON annotation parsing
@@ -29,7 +29,6 @@ def load_coco_data(dataset_path="datasets", target_size=(224, 448), num_train=10
     
     preprocess = transforms.Compose([
         transforms.Resize(resize_size),
-        transforms.CenterCrop(target_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])

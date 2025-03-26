@@ -5,7 +5,7 @@ def object_detection_loss(pred_boxes, pred_classes, pred_conf, gt_boxes, gt_labe
     """
     Compute object detection loss by matching each predicted box to the closest ground truth,
     and assigning confidence dynamically based on match quality.
-    
+
     Assumes classes are in range 0-86 (91 classes total).
     """
     batch_size = len(pred_boxes)
@@ -14,13 +14,13 @@ def object_detection_loss(pred_boxes, pred_classes, pred_conf, gt_boxes, gt_labe
 
     # Loss weights
     lambda_class = 1.0
-    lambda_box = 5.0
+    lambda_box = 2.0
     lambda_conf = 1.0
 
     class_loss = torch.tensor(0.0, device=device)
     box_loss = torch.tensor(0.0, device=device)
     conf_loss = torch.tensor(0.0, device=device)
-    
+
     total_predictions = 0
 
     for i in range(batch_size):
@@ -62,7 +62,7 @@ def object_detection_loss(pred_boxes, pred_classes, pred_conf, gt_boxes, gt_labe
         # Get matched GT values
         matched_gt_boxes = cur_gt_boxes[best_gt_idx]  # [num_pred, 4]
         matched_gt_classes = cur_gt_labels[best_gt_idx]  # [num_pred]
-        
+
         # Double-check matched classes are in valid range
         matched_gt_classes = torch.clamp(matched_gt_classes, 0, num_classes - 1)
 
@@ -91,7 +91,7 @@ def object_detection_loss(pred_boxes, pred_classes, pred_conf, gt_boxes, gt_labe
 
     # Normalize by the number of predictions to prevent exploding loss
     total_predictions = max(total_predictions, 1)  # Avoid division by zero
-    
+
     class_loss /= total_predictions
     box_loss /= total_predictions
     conf_loss /= total_predictions
@@ -99,7 +99,7 @@ def object_detection_loss(pred_boxes, pred_classes, pred_conf, gt_boxes, gt_labe
     # Weighted sum of losses
     total_loss = lambda_class * class_loss + lambda_box * box_loss + lambda_conf * conf_loss
 
-    
+
     return total_loss, class_loss, box_loss, conf_loss
 
 
