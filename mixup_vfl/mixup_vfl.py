@@ -34,6 +34,7 @@ class MixupVFL_Regression:
         self.device = device
         self.embedding_size = embedding_size
         self.mixup_strategy = mixup_strategy
+        self.top_model=None
         
         # Initialize client models
         self.client_models = []
