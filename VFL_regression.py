@@ -70,7 +70,12 @@ class CustomizableVFL:
         for i in range(num_clients):
             config = client_models_config[i]
             if config.get('model_type') == 'resnet50':
-                model = model.EfficientNetClientModel(
+                model = model.ResNetClientModel(
+                    embedding_size=embedding_size,
+                    pretrained=config.get('pretrained', True)
+                ).to(device)
+            elif config.get('model_type') == 'resnext50':
+                model = model.ResNextClientModel(
                     embedding_size=embedding_size,
                     pretrained=config.get('pretrained', True)
                 ).to(device)
@@ -88,22 +93,22 @@ class CustomizableVFL:
 
         # Initialize top model
 
-        # if config.get('server')=='object':
-        self.top_model = model.ResNetBBoxPredictor(
-             num_clients=num_clients,
-             total_embedding_size=num_clients*embedding_size,
-             num_classes=91,
-             num_boxes=20,
-             conf_threshold=0.7
-         ).to(device)
-        tp=self.top_model
-        # else:
-        #     self.top_model = ServerModel(
-        #     num_clients=num_clients,
-        #     embedding_size=embedding_size,
-        #     hidden_layers=top_model_config['hidden_layers'],
-        #     output_size=top_model_config.get('output_size', 1)
-        #     ).to(device)
+        if config.get('server')=='object':
+            self.top_model = model.ResNetBBoxPredictor(
+                num_clients=num_clients,
+                total_embedding_size=num_clients*embedding_size,
+                num_classes=91,
+                num_boxes=20,
+                conf_threshold=0.7
+            ).to(device)
+            tp=self.top_model
+        else:
+            self.top_model =model.ServerModel(
+            num_clients=num_clients,
+            embedding_size=embedding_size,
+            hidden_layers=top_model_config['hidden_layers'],
+            output_size=top_model_config.get('output_size', 1)
+            ).to(device)
 
         self.top_optimizer = optim.Adam(
             self.top_model.parameters(),
