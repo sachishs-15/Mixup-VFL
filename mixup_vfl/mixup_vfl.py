@@ -412,8 +412,7 @@ class MixupVFL_ObjectDetection:
 
         # Initialize top model
 
-        if config.get('server')=='object':
-            self.top_model = ResNetBBoxPredictor(
+        self.top_model = ResNetBBoxPredictor(
                 num_clients=num_clients,
                 total_embedding_size=num_clients*embedding_size,
                 num_classes=91,
