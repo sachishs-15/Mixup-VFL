@@ -1,15 +1,15 @@
 exp: 0
 dataset:
-  name: energy
-  subset_size: 160
+  name: concrete
+  subset_size: 1000
   train_test_ratio: 0.8
 alignment:
-  type: aligned
+  type: unaligned
   unalignment_ratio: 0.2
 model:
   num_clients: 2
   embedding_size: 16
-  mixup_strategy: mean_mixup
+  mixup_strategy: mutual_info_mixup
   client_models:
   - hidden_layers:
     - 8

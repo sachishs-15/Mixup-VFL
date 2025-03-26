@@ -10,3 +10,4 @@ pandas
 torchvision
 xmltodict
 wandb
+pyyaml

@@ -15,7 +15,9 @@ def concrete():
     df = pd.read_csv("Datasets/CONCRETE_COMPRESSIVE_STRENGTH.csv")
     target = df[df.columns[-1]]
     data = df[df.columns[:-1]]
-    print(data.isnull().sum())
+    # remove is na values
+    data = data.dropna()
+    target = target.dropna()
     data = data.to_numpy()
     target = target.to_numpy()
     return data, target, data.shape[1]
