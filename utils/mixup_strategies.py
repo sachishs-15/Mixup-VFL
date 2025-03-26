@@ -11,6 +11,40 @@ def no_mixup(
 ) -> torch.Tensor:
     return client_batch_labels[0]
     
+def add_mixup(
+        client_batch_labels: List[torch.Tensor],
+        client_embeddings: List[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Combines batch labels from multiple clients by merging all bounding boxes and labels
+        for corresponding image positions.
+
+        Args:
+            client_batch_labels: List of tensors containing batch labels from each client
+            client_embeddings: Not used, kept for API compatibility
+
+        Returns:
+            torch.Tensor: Combined labels from all clients
+        """
+        num_clients = len(client_batch_labels)
+        batch_size = len(client_batch_labels[0])
+        combined_labels = []
+
+        # For each batch position
+        for batch_idx in range(batch_size):
+            # Get all bounding boxes and labels for this image position from all clients
+            all_boxes_and_labels = []
+
+            for client_idx in range(num_clients):
+                image_labels = client_batch_labels[client_idx][batch_idx]
+                all_boxes_and_labels.append(image_labels)
+
+            # Concatenate all boxes and labels for this image
+            combined_image_labels = torch.cat(all_boxes_and_labels, dim=0)
+            combined_labels.append(combined_image_labels)
+
+        return combined_labels
+
 def max_mixup(
     client_batch_labels: List[torch.Tensor],
     client_embeddings: List[torch.Tensor] = None
