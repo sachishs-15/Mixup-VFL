@@ -12,7 +12,7 @@ from pdb import set_trace
 from data.regression_datasets import get_dataset
 from config.config import DataAlignment, MixupStrategy
 from data.utils import split_features
-from mixup_vfl import MixupVFL_Regression
+from mixup_vfl.mixup_vfl import MixupVFL_Regression
 
 def run_program(config_path):
 
@@ -61,12 +61,14 @@ def run_program(config_path):
     # Create feature splits
     feature_distribution = config.get('feature_distribution')
     num_clients = model_config['num_clients']
+    set_trace()
+
     feature_splits = split_features(
         num_features=num_features, 
         num_clients=num_clients, 
         distribution=feature_distribution
     )
-    
+
     print(f"Feature splits: {feature_splits}")
     
     # Configure device

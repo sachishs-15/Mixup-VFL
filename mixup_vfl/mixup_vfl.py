@@ -7,7 +7,7 @@ import numpy as np
 from utils.mixup_strategies import no_mixup, max_mixup, mean_mixup, importance_mixup, model_based_mixup, mutual_info_mixup
 from config.config import DataAlignment, MixupStrategy
 from models import *
-from time import time
+import time
 import tqdm
 import copy
 import wandb

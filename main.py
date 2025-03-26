@@ -90,6 +90,7 @@ def run_program(config_path):
     # Create feature splits
     feature_distribution = config.get('feature_distribution')
     num_clients = model_config['num_clients']
+
     feature_splits = split_features(
         num_features=num_features, 
         num_clients=num_clients, 

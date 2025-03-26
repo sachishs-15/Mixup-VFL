@@ -9,3 +9,4 @@ requests
 pandas
 torchvision
 xmltodict
+wandb

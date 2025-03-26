@@ -1,10 +1,10 @@
 exp: 0
 dataset:
-  name: superconductivity
-  subset_size: 50000
+  name: energy
+  subset_size: 160
   train_test_ratio: 0.8
 alignment:
-  type: unaligned
+  type: aligned
   unalignment_ratio: 0.2
 model:
   num_clients: 2
@@ -26,14 +26,13 @@ model:
     - 32
     - 16
     learning_rate: 0.001
-    aggregate_fn: null
 training:
   n_epochs: 100
-  batch_size: 32
+  batch_size: 8
   device: cpu
   wandb:
     enabled: false
-    project: VFL-Regression
-    entity: ayushferro123-iit-kharagpur
-    name: experiment
+    project: dummy1
+    entity: dummy2
+    name: dummy3
 feature_distribution: null

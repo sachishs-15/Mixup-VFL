@@ -1,2 +1,5 @@
 Datasets
 wandb
+*.sh
+main.py
+vfl_implementation.py
