@@ -1,12 +1,12 @@
 # Mixup-VFL: Leveraging Unaligned Data for Enhanced Vertical Federated Learning
 
-This repository contains the implementation of Mixup-VFL, a framework that exploits all available data through innovative label-mixing strategies in Vertical Federated Learning (VFL) settings. The framework is designed to work effectively even when data is only partially aligned across participating entities, eliminating the need for entity alignment protocols like Private Set Intersection (PSI).
+Vertical Federated Learning (VFL) enables privacy-preserving machine learning across distributed data sources but faces a critical challenge when entities are only partially aligned across participants. Traditional approaches rely on Private Set Intersection (PSI) to identify common entities, requiring computational overhead and focusing primarily on the aligned portion of data.
 
-## Overview
+We propose Mixup-VFL, a framework that exploits all available data through innovative label-mixing strategies, eliminating the need for entity alignment protocols like PSI. We evaluate various mixing approaches for regression tasks and explore their applicability to object detection by reframing it as a regression problem within the VFL paradigm.
 
-Vertical Federated Learning enables privacy-preserving machine learning across distributed data sources but faces challenges when entities are only partially aligned across participants. Traditional approaches rely on identifying common entities, requiring computational overhead and focusing primarily on the aligned portion of data.
+Extensive experiments across multiple datasets demonstrate that Mixup-VFL consistently outperforms entity-aligned-only approaches, with particularly substantial gains in scenarios with minimal data overlap. For regression tasks with only 20% aligned data, our mixup strategies achieved RMSE reductions up to 72% compared to baseline methods. Similarly, our object detection implementation on COCO and PASCAL VOC datasets showed consistent improvements in test loss metrics when incorporating unaligned data.
 
-Mixup-VFL tackles this problem by utilizing innovative label-mixing strategies to leverage all available data, including unaligned portions. This approach significantly improves model performance, especially in scenarios with minimal data overlap.
+Our approach offers a practical solution for real-world VFL deployments where data alignment is limited but valuable information exists across all available data.
 
 ## Key Features
 
@@ -28,10 +28,13 @@ The framework implements several label-mixing strategies:
 ## Supported Tasks
 
 ### Regression
-- Concrete Compressive Strength prediction
-- Energy Efficiency prediction
+
+Support for various datasets:
+
+- Concrete Compressive Strength 
+- Energy Efficiency 
 - Real Estate Valuation
-- Superconductivity prediction
+- Superconductivity 
 - Yacht Hydrodynamics
 
 ### Object Detection
@@ -41,22 +44,27 @@ The framework implements several label-mixing strategies:
 ## Project Structure
 
 ```
-mixup-vfl/
+VFL-Regression/
 ├── config/
 │   ├── config.py               # Configuration enums and settings
 │   └── vfl_config.yaml         # Example configuration file
 ├── data/
-│   ├── regression_datasets.py  # Dataset loaders for regression tasks
+│   ├── __init__.py
+│   ├── coco.py                 # COCO dataset loader
 │   ├── pascal_voc.py           # Pascal VOC dataset loader
-│   └── utils.py                # Data processing utilities
+│   ├── regression_datasets.py  # Dataset loaders for regression tasks
+│   ├── utils.py                # Data processing utilities
+│   └── Datasets/               # Directory for dataset storage
 ├── mixup_vfl/
 │   └── mixup_vfl.py            # Core implementation of Mixup-VFL
 ├── models/
-│   └── various model implementations
-├── utils/
+│   ├── __init__.py
+│   ├── client_models.py        # Client-side model implementations
+│   └── server_models.py        # Server-side model implementations
+└── utils/
 │   ├── loss.py                 # Custom loss functions
 │   └── mixup_strategies.py     # Implementation of mixup strategies
-├── run_object_detection.py     # Script to run object detection experiments
+├── run_object_detection.py     # Script to run object detection 
 └── run_regression.py           # Script to run regression experiments
 ```
 
