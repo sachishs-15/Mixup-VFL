@@ -32,7 +32,7 @@ training:
   batch_size: 32
   device: cpu
   wandb:
-    enabled: true
+    enabled: false
     project: VFL-Regression
     entity: ayushferro123-iit-kharagpur
     name: experiment

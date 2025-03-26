@@ -1,10 +1,11 @@
 torch
 numpy
 scikit-learn
-pdb
 tqdm
 typing
-torchvision
 opencv-python
 matplotlib
+requests
+pandas
+torchvision
 xmltodict
