@@ -420,7 +420,7 @@ class MixupVFL_ObjectDetection:
                 num_boxes=20,
                 conf_threshold=0.7
             ).to(device)
-            tp=self.top_model
+        tp=self.top_model
 
         self.top_optimizer = optim.Adam(
             self.top_model.parameters(),
