@@ -12,6 +12,7 @@ class MixupStrategy(Enum):
     MAX_MIXUP = "max_mixup"
     MEAN_MIXUP = "mean_mixup"
     ADD_MIXUP="add_mixup"
+    PART_MIXUP="part_mixup"
     IMPORTANCE_MIXUP = "importance_mixup"
     MODEL_BASED_MIXUP = "model_based_mixup"
     MUTUAL_INFO_MIXUP = "mutual_info_mixup"
