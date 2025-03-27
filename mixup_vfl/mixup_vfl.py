@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from utils.mixup_strategies import no_mixup, max_mixup, mean_mixup, importance_mixup, model_based_mixup, mutual_info_mixup
+from utils.mixup_strategies import no_mixup, max_mixup, mean_mixup, importance_mixup, model_based_mixup, mutual_info_mixup,add_mixup
 from config.config import DataAlignment, MixupStrategy
 from models import *
 import time
@@ -429,19 +429,8 @@ class MixupVFL_ObjectDetection:
 
         # Mixup strategy for labels
 
-        if self.mixup_strategy == MixupStrategy.PART_MIXUP:
-            self.mixup_fn = self.part_mixup
 
         self.loss_fn = object_detection_loss
-
-
-    @staticmethod
-    def part_mixup(
-        client_batch_labels: List[torch.Tensor],
-        client_embeddings: List[torch.Tensor] = None
-    ) -> torch.Tensor:
-         return client_batch_labels[0]
-
 
     def reverse_image_transform(self,transformed_tensor):
         """
@@ -601,7 +590,7 @@ class MixupVFL_ObjectDetection:
         concatenated_embeddings = torch.cat(client_embeddings, dim=1)
 
         box, labels, conf = self.top_model(concatenated_embeddings)
-        truth = self.mixup_fn(client_batch_labels, concatenated_embeddings)
+        truth = add_mixup(client_batch_labels, concatenated_embeddings)
 
         label_real = [tensor[:, 0] for tensor in truth]
         box_real = [tensor[:, 1:] for tensor in truth]
