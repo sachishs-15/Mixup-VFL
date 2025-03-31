@@ -146,4 +146,4 @@ For regression tasks with only 20% aligned data, our mixup strategies achieved R
 
 ## Acknowledgments
 
-This research was supported by the Autonomous Ground Vehicle: Autonomy Intelligence (AGV.AI) Research Group at the Indian Institute of Technology Kharagpur.
+This research was supported by the Autonomous Ground Vehicle: Autonomy & Intelligence (AGV.AI) Research Group at the Indian Institute of Technology Kharagpur.
