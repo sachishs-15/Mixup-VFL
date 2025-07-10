@@ -1,17 +1,17 @@
 # Mixup-VFL: Leveraging Unaligned Data for Enhanced Vertical Federated Learning
 
-Vertical Federated Learning (VFL) enables privacy-preserving machine learning across distributed data sources but faces a critical challenge when entities are only partially aligned across participants. Traditional approaches rely on Private Set Intersection (PSI) to identify common entities, requiring computational overhead and focusing primarily on the aligned portion of data.
+Vertical Federated Learning (VFL) enables privacy-preserving machine learning across distributed data sources but faces a critical challenge when entities are only partially aligned across participants. Traditional approaches rely on Private Set Intersection (PSI) to identify common entities, which requires computational overhead and focuses primarily on the aligned portion of the data.
 
 We propose Mixup-VFL, a framework that exploits all available data through innovative label-mixing strategies, eliminating the need for entity alignment protocols like PSI. We evaluate various mixing approaches for regression tasks and explore their applicability to object detection by reframing it as a regression problem within the VFL paradigm.
 
-Extensive experiments across multiple datasets demonstrate that Mixup-VFL consistently outperforms entity-aligned-only approaches, with particularly substantial gains in scenarios with minimal data overlap. For regression tasks with only 20% aligned data, our mixup strategies achieved RMSE reductions up to 72% compared to baseline methods. Similarly, our object detection implementation on COCO and PASCAL VOC datasets showed consistent improvements in test loss metrics when incorporating unaligned data.
+Extensive experiments across multiple datasets demonstrate that Mixup-VFL consistently outperforms entity-aligned-only approaches, with particularly substantial gains in scenarios where data overlap is minimal. For regression tasks with only 20% aligned data, our mixup strategies achieved RMSE reductions up to 72% compared to baseline methods. Similarly, our object detection implementation on COCO and PASCAL VOC datasets showed consistent improvements in test loss metrics when incorporating unaligned data.
 
 Our approach offers a practical solution for real-world VFL deployments where data alignment is limited but valuable information exists across all available data.
 
 ## Key Features
 
 - Multiple mixup strategies for regression tasks
-- Object detection implementation within VFL paradigm
+- Object detection implementation within the VFL paradigm
 - Support for both aligned and unaligned data settings
 - Comprehensive evaluation framework
 
@@ -142,7 +142,7 @@ training:
 
 ## Results
 
-For regression tasks with only 20% aligned data, our mixup strategies achieved RMSE reductions of up to 72% compared to baseline methods. Similarly, our object detection implementation on COCO and PASCAL VOC datasets showed consistent improvements in test loss metrics when incorporating unaligned data.
+For regression tasks with only 20% aligned data, our mixup strategies achieve RMSE reductions of up to 72% compared to baseline methods. Similarly, our object detection implementation on COCO and PASCAL VOC datasets shows consistent improvements in test loss metrics when incorporating unaligned data.
 
 ## Acknowledgments
 
